@@ -257,6 +257,8 @@ gcloud compute firewall-rules create reddit-app \
  --target-tags=docker-machine \
  --description="Allow PUMA connections" \
  --direction=INGRESS
- ```
-
- 
+```
+Запушил
+```
+docker tag reddit:latest decapapreta/otus-reddit:1.0
+```
