@@ -227,3 +227,36 @@ eval $(docker-machine env docker-host)
 Для реализации Docker-in-Docker можно использовать https://github.com/jpetazzo/dind
 Дока по user namespace: https://docs.docker.com/engine/security/userns-remap/
 
+Сравнение вывода команд:
+```
+docker run --rm -ti tehbilly/htop
+docker run --rm --pid host -ti tehbilly/htop
+```
+во втором случае докер-контейнер имеет доступ к процессам хоста
+
+## Структура репозитория
+
+db_config  docker-1.log  Dockerfile  mongod.conf  start.sh
+
+заполнили все файлы гистами, запустили билд докер-образа:
+```
+docker build -t reddit:latest .
+```
+Точка в конце обязательна, она указывает на путь
+до Docker-контекста
+Флаг -t задает тег для собранного образа
+
+Запуск этого контейнера:
+```
+docker run --name reddit -d --network=host reddit:latest
+```
+Правило фаера для 9292:
+```
+gcloud compute firewall-rules create reddit-app \
+ --allow tcp:9292 \
+ --target-tags=docker-machine \
+ --description="Allow PUMA connections" \
+ --direction=INGRESS
+ ```
+
+ 
