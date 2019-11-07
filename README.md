@@ -198,7 +198,7 @@ yum install google-cloud-sdk
 ```
 gcloud init
 ```
-Сменил конфигурацию на новый проект.
+Сменил конфигурацию на новый проект GCE.
 
 ## Docker machine
 ```
@@ -233,6 +233,7 @@ docker run --rm -ti tehbilly/htop
 docker run --rm --pid host -ti tehbilly/htop
 ```
 во втором случае докер-контейнер имеет доступ к процессам хоста
+во втором случае по процессам вижу, что докер запустился на виртуалке в гугле
 
 ## Структура репозитория
 
@@ -258,7 +259,77 @@ gcloud compute firewall-rules create reddit-app \
  --description="Allow PUMA connections" \
  --direction=INGRESS
 ```
-Запушил
+Запушил на докерхаб:
 ```
 docker tag reddit:latest decapapreta/otus-reddit:1.0
 ```
+Запуск локально происходит при выполнении
+```
+docker run --name reddit -d -p 9292:9292 decapapreta/otus-reddit:1.0
+```
+### Проверки:
+
+docker logs reddit -f - посмотреть логи контейнера
+
+docker exec -it reddit bash - запустить баш в контейнере
+
+ps aux - глянем что внутри в процессах
+
+killall5 1 - убьем процесс с пидом 1
+
+docker start reddit - создадим контейнер из образа
+
+docker stop reddit && docker rm reddit - остановим и удалим контейнер. не удаляя образа
+
+docker run --name reddit --rm -it decapapreta/otus-reddit:1.0 bash - запустить контейнер без запуска приложения + прицепимся туда TTY
+
+ps aux - убедимся, что ничто не заработало
+
+exit - выйдем
+
+docker inspect decapapreta/otus-reddit:1.0 - смотрю сведения об образе
+
+docker inspect decapapreta/otus-reddit:1.0 -f '{{.ContainerConfig.Cmd}}' - смотрю какой процесс в CMD, который основной: [/bin/sh -c #(nop)  CMD ["/start.sh"]]
+
+docker run --name reddit -d -p 9292:9292 decapapreta/otus-reddit:1.0 - запуск на локалхосте с биндом порта приложения на 9292 локалхоста
+
+docker exec -it reddit bash - зайти консольно в запущенный контейнер
+
+mkdir /test1234 - создадим директорию
+
+touch /test1234/testfile - создадим файл
+
+rmdir /opt удалим опт
+
+exit
+
+docker diff reddit - покажет все изменения к контейнере относительно исходника:
+```
+C /root
+A /root/.bash_history
+C /var
+C /var/log
+A /var/log/mongod.log
+C /var/lib
+C /var/lib/mongodb
+A /var/lib/mongodb/_tmp
+A /var/lib/mongodb/journal
+A /var/lib/mongodb/journal/j._0
+A /var/lib/mongodb/journal/prealloc.1
+A /var/lib/mongodb/journal/prealloc.2
+A /var/lib/mongodb/local.0
+A /var/lib/mongodb/local.ns
+A /var/lib/mongodb/mongod.lock
+A /test1234
+A /test1234/testfile
+C /tmp
+A /tmp/mongodb-27017.sock
+D /opt
+```
+Видимо А-изменено, С-создано, D-удалено.
+
+docker stop reddit && docker rm reddit остановим и удалим контейнер
+
+docker run --name reddit --rm -it decapapreta/otus-reddit:1.0 bash -запустим заново без приложения
+
+ls / - убедимся, что все чисто и следов от предыдущих действий нет
