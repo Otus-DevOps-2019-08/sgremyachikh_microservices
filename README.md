@@ -333,3 +333,10 @@ docker stop reddit && docker rm reddit остановим и удалим кон
 docker run --name reddit --rm -it decapapreta/otus-reddit:1.0 bash -запустим заново без приложения
 
 ls / - убедимся, что все чисто и следов от предыдущих действий нет
+
+## За собой прибираемся в GCE:
+из той консоли, где у нас был запил docker-machine:
+```
+docker-machine rm docker-host -f
+eval $(docker-machine env --unset)
+```
