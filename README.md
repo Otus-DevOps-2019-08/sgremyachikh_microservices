@@ -291,6 +291,8 @@ docker inspect decapapreta/otus-reddit:1.0 - смотрю сведения об 
 
 docker inspect decapapreta/otus-reddit:1.0 -f '{{.ContainerConfig.Cmd}}' - смотрю какой процесс в CMD, который основной: [/bin/sh -c #(nop)  CMD ["/start.sh"]]
 
+docker image history image_name - смотрю историю сборки образа
+
 docker run --name reddit -d -p 9292:9292 decapapreta/otus-reddit:1.0 - запуск на локалхосте с биндом порта приложения на 9292 локалхоста
 
 docker exec -it reddit bash - зайти консольно в запущенный контейнер
@@ -341,3 +343,296 @@ docker-machine rm docker-host -f
 eval $(docker-machine env --unset)
 ```
 ## Второе задание со звездочной * отложил, но с функционалом поигрался:)
+
+______________________
+# HW: Docker образы. Микросервисы.
+```
+git checkout -b docker-3
+```
+В качестве линтера использую плагин к VSCode
+
+Для игр с докером разверну вновь докер-машину.
+```
+export GOOGLE_PROJECT=docker-258020
+```
+```
+docker-machine create --driver google \
+ --google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+ --google-machine-type n1-standard-1 \
+ --google-zone europe-west1-b \
+ docker-host
+```
+Переключаю докер-машин на данное окружение:
+```
+eval $(docker-machine env docker-host)
+```
+Проверяю, докер хост создан:
+```
+docker-machine ls
+NAME          ACTIVE   DRIVER   STATE     URL                         SWARM   DOCKER     ERRORS
+docker-host   *        google   Running   tcp://104.155.127.31:2376           v19.03.4   
+
+```
+## Скачал, распаковал и переименовал репозиторий в src
+
+В файлах Dockerfile содержатся инструкции по созданию образа. С них, набранных заглавными буквами, начинаются строки этого файла. После инструкций идут их аргументы. Инструкции, при сборке образа, обрабатываются сверху вниз.
+Слои в итоговом образе создают только инструкции FROM, RUN, COPY, и ADD.
+
+- FROM — задаёт базовый (родительский) образ.
+
+- LABEL — описывает метаданные. Например — сведения о том, кто создал и поддерживает образ.
+
+- ENV — устанавливает постоянные переменные среды.
+
+- RUN — выполняет команду и создаёт слой образа. Используется для установки в контейнер пакетов.
+
+- COPY — копирует в контейнер файлы и папки.
+
+- ADD — копирует файлы и папки в контейнер, может распаковывать локальные .tar-файлы, можно использовать для curl.
+
+- CMD — описывает команду с аргументами, которую нужно выполнить когда контейнер будет запущен. Аргументы могут быть переопределены при запуске контейнера. В файле может присутствовать лишь одна инструкция CMD.
+
+- WORKDIR — задаёт рабочую директорию для следующей инструкции.
+
+- ARG — задаёт переменные для передачи Docker во время сборки образа.
+
+- ENTRYPOINT — предоставляет команду с аргументами для вызова во время выполнения контейнера. Аргументы не переопределяются.
+
+- EXPOSE — указывает на необходимость открыть порт.
+
+- VOLUME — создаёт точку монтирования для работы с постоянным хранилищем.
+
+### post-py - сервис отвечающий за написание постов:
+
+Гист с граблями был:
+```
+FROM python:3.6.0-alpine
+
+WORKDIR /app
+ADD . /app
+
+# без gcc видел "unable to execute 'gcc': No such file or directory" при сборке.
+# По этому поставлю, а потом удалю после requirements
+
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev \
+    && pip install -r /app/requirements.txt \
+    && apk del --virtual .build-deps gcc musl-dev
+
+ENV POST_DATABASE_HOST post_db
+ENV POST_DATABASE posts
+
+CMD ["python3", "post_app.py"]
+```
+
+### Comment - сервис отвечающий за написание комментариев
+Перегруппирую содержимое и объединю лишние RUN, добавлю apt-get clean:
+```
+FROM ruby:2.2
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
+
+ADD Gemfile* $APP_HOME/
+RUN apt-get update -qq && apt-get install -y build-essential && apt-get clean && bundle install
+ADD . $APP_HOME
+
+ENV COMMENT_DATABASE_HOST comment_db
+ENV COMMENT_DATABASE comments
+
+CMD ["puma"]
+
+```
+### UI - веб-интерфейс, работающий с другими сервисами
+Перегруппирую содержимое и объединю лишние RUN, добавлю apt-get clean
+```
+FROM ubuntu:16.04
+
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+ENV APP_HOME /app
+
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+
+RUN apt-get update \
+    && apt-get install -y ruby-full ruby-dev build-essential \
+    && gem install bundler --no-ri --no-rdoc && apt-get clean \
+    && bundle install
+
+ADD . $APP_HOME
+
+CMD ["puma"]
+
+```
+### База данных MongoDB
+docker pull mongo:latest
+
+### Собираю:
+```
+docker pull mongo:latest
+docker build -t decapapreta/post:1.0 ./post-py
+docker build -t decapapreta/comment:1.0 ./comment
+docker build -t decapapreta/ui:1.0 ./ui
+```
+Сборка ui:1.0 началась не с первого шага. Так как перекачивать заново исходный образ руби не потребовалось.
+### Запускаю:
+```
+docker network create reddit
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post decapapreta/post:1.0
+docker run -d --network=reddit --network-alias=comment decapapreta/comment:1.0
+docker run -d --network=reddit -p 9292:9292 decapapreta/ui:1.0
+```
+- Создали bridge-сеть для контейнеров, так как сетевые алиасы не
+работают в сети по умолчанию
+- Запустили наши контейнеры в этой сети
+- Добавили сетевые алиасы контейнерам
+
+http://<docker-host-ip>:9292/
+Работает!
+
+## Задание со *:
+
+Запустите контейнеры с другими сетевыми алиасами:
+При запуске контейнеров (docker run) задайте им
+переменные окружения соответствующие новым сетевым
+алиасам, не пересоздавая образ:
+```
+docker run -d --network=reddit --network-alias=post_db_1 --network-alias=comment_db_1 mongo:latest
+docker run -d --env POST_DATABASE_HOST=post_db_1 --env POST_DATABASE=posts_1 --network=reddit --network-alias=post_1 decapapreta/post:1.0
+docker run -d --env COMMENT_DATABASE_HOST=comment_db_1 --env COMMENT_DATABASE=comments_1 --network=reddit --network-alias=comment_1 decapapreta/comment:1.0
+docker run -d --env POST_SERVICE_HOST=post_1 --env COMMENT_SERVICE_HOST=comment_1 --network=reddit -p 9292:9292 decapapreta/ui:1.0
+```
+Проверьте работоспособность сервиса:
+http://<docker-host-ip>:9292/
+Работает!
+
+### Задание со *:
+
+Попробуйте собрать образ на основе Alpine Linux
+Придумайте еще способы уменьшить размер образа
+Можете реализовать как только для UI сервиса, так и для
+остальных (post, comment)
+Все оптимизации проводите в Dockerfile сервиса.
+Дополнительные варианты решения уменьшения размера
+образов можете оформить в виде файла Dockerfile.<цифра> в
+папке сервиса
+
+До ковыряния докерфайлов:
+```
+docker images                          
+REPOSITORY                TAG                 IMAGE ID            CREATED             SIZE
+decapapreta/ui            2.0                 a1f9587f1062        19 seconds ago      459MB
+decapapreta/comment       1.0                 4ee44c300916        About a minute ago   781MB
+decapapreta/post          1.0                 a9280dcaf533        4 minutes ago        109MB
+```
+
+ui
+-------------------------------
+Результат - 158мб на основе Dockerfile.3
+```
+FROM ruby:2.2-alpine
+
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+ENV APP_HOME /app
+
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+
+RUN apk add --no-cache --virtual .build-deps build-base \
+    && bundle install \
+    && bundle clean \
+    && apk del .build-deps
+
+ADD . $APP_HOME
+
+CMD ["puma"]
+```
+
+post
+-----------------------
+Результат - без изменений. Исходный гист был с ошибкой, которая была исправлена, а так - этот образ хорош вполне: 109мб
+```
+FROM python:3.6.0-alpine
+
+ENV POST_DATABASE_HOST post_db
+ENV POST_DATABASE posts
+
+WORKDIR /app
+ADD . /app
+
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev \
+    && pip install -r /app/requirements.txt \
+    && apk del --virtual .build-deps gcc musl-dev
+
+CMD ["python3", "post_app.py"]
+```
+
+comment
+-------------------------
+Результат - 158мб
+```
+FROM ruby:2.2-alpine
+
+ENV COMMENT_DATABASE_HOST comment_db
+ENV COMMENT_DATABASE comments
+ENV APP_HOME /app
+
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+
+RUN apk add --no-cache --virtual .build-deps build-base \
+    && bundle install \
+    && bundle clean \
+    && apk del .build-deps
+
+ADD . $APP_HOME
+
+CMD ["puma"]
+```
+Итого:
+```
+decapapreta/ui            3.0                 fdecc477e68a        17 seconds ago      158MB
+decapapreta/post          1.0                 a9280dcaf533        33 minutes ago      109MB
+decapapreta/comment       3.0                 0b486bc1f578        8 minutes ago       156MB
+```
+### Запустим новые контейнеры:
+```
+docker kill $(docker ps -q)
+docker network create reddit
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post decapapreta/post:1.0
+docker run -d --network=reddit --network-alias=comment decapapreta/comment:3.0
+docker run -d --network=reddit -p 9292:9292 decapapreta/ui:3.0
+# при убиении контейнеров посты не сохраняются.
+# создам волюм к монге
+docker volume create reddit_db
+# убью существующие
+docker kill $(docker ps -q)
+# создам заново. но подключу волиум к монге через параметр -v
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:latest
+docker run -d --network=reddit --network-alias=post decapapreta/post:1.0
+docker run -d --network=reddit --network-alias=comment decapapreta/comment:3.0
+docker run -d --network=reddit -p 9292:9292 decapapreta/ui:3.0
+```
+При перезапуске и убиении данных контейнеров мы уже не теряем посты - бд в волиуме и мы не теряем ее, а переподключаем при создании контейнеров из образов.
+
+ЕСЛИ вдруг играл на своей машине, то:
+```
+docker kill $(docker ps -q)
+docker stop $(docker ps -a -q)
+docker rm $(docker ps -a -q)
+# волиумы посмотрим:
+docker volume ls
+# тож можно поубивать
+docker volume rm $(docker volume ls -f dangling=true -q)
+```
