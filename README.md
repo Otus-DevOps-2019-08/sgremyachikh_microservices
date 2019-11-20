@@ -626,7 +626,7 @@ docker run -d --network=reddit -p 9292:9292 decapapreta/ui:3.0
 ```
 При перезапуске и убиении данных контейнеров мы уже не теряем посты - бд в волиуме и мы не теряем ее, а переподключаем при создании контейнеров из образов.
 
-ЕСЛИ вдруг играл на своей машине, то:
+### ЕСЛИ вдруг играл на своей машине, то:
 ```
 docker kill $(docker ps -q)
 docker stop $(docker ps -a -q)
@@ -636,3 +636,45 @@ docker volume ls
 # тож можно поубивать
 docker volume rm $(docker volume ls -f dangling=true -q)
 ```
+Если же играл в докер-машине облачной, то:
+docker-machine rm docker-host -f
+eval $(docker-machine env --unset)
+
+______________________
+# HW: Сетевое взаимодействие Docker контейнеров. Docker Compose. Тестирование образов.
+
+### Создадим среду для домашки
+```
+git checkout -b docker-4
+```
+В качестве линтера использую плагин к VSCode
+
+Для игр с докером разверну вновь докер-машину.
+```
+export GOOGLE_PROJECT=docker-258020
+```
+```
+docker-machine create --driver google \
+ --google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+ --google-machine-type n1-standard-1 \
+ --google-zone europe-west1-b docker-host
+```
+```
+eval $(docker-machine env docker-host)
+```
+```
+docker-machine ls
+NAME          ACTIVE   DRIVER   STATE     URL                         SWARM   DOCKER     ERRORS
+docker-host   *        google   Running   tcp://104.155.127.31:2376           v19.03.4   
+```
+## Автоматизация подготовки среды для домашки:
+
+### Terraform: 
+Вообще все в облаке должно быть в коде.
+В директории terraform есть bucket_creation - там создание бакета в проекте GCE. В корне директории terraform код создает стейт инфраструктуры в бакете, созданное правило для 22 порта в облаке для провижена, ключи для ssh в GCE,. Так как все должнобыть *aaC.
+### docker-machine:
+В директории docker-machine-scripts скрипт развертыввния среды разработки ДЗ и скрипт свертывания. 
+
+## Работа с сетью в Docker
+
+!!!! Не забыть добавить креды в гитигнор
