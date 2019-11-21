@@ -11,3 +11,4 @@
 .molecule
 .cache
 .pytest_cache 
+docker-compose.yml.env
