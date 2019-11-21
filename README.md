@@ -1095,5 +1095,57 @@ networks:
 ```
 По умолчанию, все контэйнеры, которые запускаются с помощью docker-compose, используют название текущей директории как префикс. Название этой директории может отличаться в рабочих окружениях у разных разработчиков. Этот префикс (app_) используется, когда мы хотим сослаться на контейнер из основного docker-compose файла. Чтобы зафиксировать этот префикс, нужно создать файл .env в той директории, из которой запускается docker-compose:
 
-
 COMPOSE_PROJECT_NAME=app
+
+```
+docker-compose -f docker-compose.yml config
+networks:
+  back_net: {}
+  front_net: {}
+services:
+  comment:
+    build:
+      context: /home/sgremyachikh/OTUS/sgremyachikh_microservices/src/comment
+    image: decapapreta/comment:1.0
+    networks:
+      back_net:
+        aliases:
+        - comment
+      front_net:
+        aliases:
+        - comment
+  post:
+    build:
+      context: /home/sgremyachikh/OTUS/sgremyachikh_microservices/src/post-py
+    image: decapapreta/post:1.0
+    networks:
+      back_net:
+        aliases:
+        - post
+      front_net:
+        aliases:
+        - post
+  post_db:
+    image: mongo:3.2
+    networks:
+      back_net:
+        aliases:
+        - post_db
+    volumes:
+    - post_db:/data/db:rw
+  ui:
+    build:
+      context: /home/sgremyachikh/OTUS/sgremyachikh_microservices/src/ui
+    image: decapapreta/ui:1.0
+    networks:
+      front_net:
+        aliases:
+        - ui
+    ports:
+    - protocol: tcp
+      published: 80
+      target: 9292
+version: '3.3'
+volumes:
+  post_db: {}
+```
