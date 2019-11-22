@@ -626,7 +626,7 @@ docker run -d --network=reddit -p 9292:9292 decapapreta/ui:3.0
 ```
 При перезапуске и убиении данных контейнеров мы уже не теряем посты - бд в волиуме и мы не теряем ее, а переподключаем при создании контейнеров из образов.
 
-ЕСЛИ вдруг играл на своей машине, то:
+### ЕСЛИ вдруг играл на своей машине, то:
 ```
 docker kill $(docker ps -q)
 docker stop $(docker ps -a -q)
@@ -635,4 +635,517 @@ docker rm $(docker ps -a -q)
 docker volume ls
 # тож можно поубивать
 docker volume rm $(docker volume ls -f dangling=true -q)
+```
+Если же играл в докер-машине облачной, то:
+docker-machine rm docker-host -f
+eval $(docker-machine env --unset)
+
+______________________
+# HW: Сетевое взаимодействие Docker контейнеров. Docker Compose. Тестирование образов.
+
+### Создадим среду для домашки
+```
+git checkout -b docker-4
+```
+В качестве линтера использую плагин к VSCode
+
+Для игр с докером разверну вновь докер-машину.
+```
+export GOOGLE_PROJECT=docker-258020
+```
+```
+docker-machine create --driver google \
+ --google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+ --google-machine-type n1-standard-1 \
+ --google-zone europe-west1-b docker-host
+```
+```
+eval $(docker-machine env docker-host)
+```
+```
+docker-machine ls
+NAME          ACTIVE   DRIVER   STATE     URL                         SWARM   DOCKER     ERRORS
+docker-host   *        google   Running   tcp://104.155.127.31:2376           v19.03.4   
+```
+-------------------------------
+## Автоматизация подготовки среды для домашки:
+
+### Terraform: 
+Вообще все в облаке должно быть в коде.
+В директории terraform есть bucket_creation - там создание бакета в проекте GCE. В корне директории terraform код создает стейт инфраструктуры в бакете, созданное правило для 22 порта в облаке для провижена, ключи для ssh в GCE,. Так как все должнобыть *aaC.
+### docker-machine:
+В директории docker-machine-scripts скрипт развертыввния среды разработки ДЗ и скрипт свертывания. 
+
+------------------------------
+
+## Разобраться с работой сети в Docker
+• none
+• host
+• bridge
+
+### None network driver
+
+Запустим контейнер с использованием none-драйвера:
+```
+docker pull joffotron/docker-net-tools
+
+docker run -ti --rm --network none joffotron/docker-net-tools -c ifconfig 
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+```
+В результате, видим:
+• что внутри контейнера из сетевых интерфейсов существует только loopback.
+
+```
+docker run -ti --rm --network none joffotron/docker-net-tools -c 'ping localhost'
+PING localhost (127.0.0.1): 56 data bytes
+64 bytes from 127.0.0.1: seq=0 ttl=64 time=0.030 ms
+64 bytes from 127.0.0.1: seq=1 ttl=64 time=0.101 ms
+64 bytes from 127.0.0.1: seq=2 ttl=64 time=0.034 ms
+64 bytes from 127.0.0.1: seq=3 ttl=64 time=0.102 ms
+^C
+--- localhost ping statistics ---
+4 packets transmitted, 4 packets received, 0% packet loss
+round-trip min/avg/max = 0.030/0.066/0.102 ms
+```
+Сетевой стек самого контейнера работает (ping localhost),
+но без возможности контактировать с внешним миром. 
+
+Значит, можно даже запускать сетевые сервисы внутри
+такого контейнера, но лишь для локальных
+экспериментов (тестирование, контейнеры для
+выполнения разовых задач и т.д.)
+
+### Host network driver
+```
+docker run -ti --rm --network host joffotron/docker-net-tools -c ifconfig 
+### Результат - вывод конфигурации всех интерфейсов локальной хост-машины
+```
+Запустите несколько раз (2-4)
+> docker run --network host -d nginx
+
+Что выдал docker ps? Как думаете почему?
+Выдал, что запущен 1 инстанс докера с nginx, т.к. первый сразу же занял 80 порт, а послежующие по этой причине упали с кодом 1.
+
+>  docker kill $(docker ps -q)
+
+### Docker networks
+
+network namespaces
+> sudo ln -s /var/run/docker/netns /var/run/netns
+
+на docker-host создан симлинк, позволяющий видеть неймспейсы командой 
+```
+sudo ip netns
+```
+список неймспейсов без запущенных контейнеров
+```
+sudo ip netns
+default
+```
+#### список неймспейсов при запущенном контейнере с сетью none
+```
+docker run --network none -d nginx
+docker ps
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS              PORTS               NAMES
+d9d1cbd8bd53        nginx               "nginx -g 'daemon of…"   27 seconds ago      Up 24 seconds                           epic_booth
+```
+на docker-machine
+```
+sudo ip netns
+2bd83d1d615b
+default
+```
+видим, что появился новый namespace, запускаем ещё один контейнер
+```
+docker run --network none -d nginx
+da07adeb676ea5b4dec31b9a002f539ffcec53fde230ed00e5245b4f070fd6ba
+
+docker ps
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS              PORTS               NAMES
+da07adeb676e        nginx               "nginx -g 'daemon of…"   33 seconds ago      Up 32 seconds                           gracious_chatterjee
+d9d1cbd8bd53        nginx               "nginx -g 'daemon of…"   2 minutes ago       Up 2 minutes                            epic_booth
+```
+на docker-machine
+```
+sudo ip netns
+3fe460539474
+2bd83d1d615b
+default
+```
+видим 2 неймспейса
+
+убьем все
+```
+docker kill $(docker ps -q)
+```
+#### Сеть host
+```
+docker run --network host -d nginx
+3e15989e170047ad9d6466aebd38e486624d73706855730a9d1392b154deb821
+```
+На docker-machine
+```
+sudo ip netns
+default
+```
+неймспейсы не создавались, используется хостовый.
+
+убили все контейнеры 
+```
+docker kill $(docker ps -q)
+```
+### Bridge network driver
+
+Создадим bridge-сеть в docker
+```
+sudo docker network create reddit --driver bridge
+7cf6b4acf1bbd8ac60fe56ba9d0cba3bd635a3f104b2bf01192b041b97729314
+```
+Собираю образы шельником в корне src/build_all_4.sh: 
+```
+docker pull mongo:latest
+docker build -t decapapreta/post:1.0 ./post-py
+docker build -t decapapreta/comment:1.0 ./comment
+docker build -t decapapreta/ui:1.0 ./ui
+```
+Чтоб не билдить в другой раз заново, решил закоммитить каждый образ и запушить на докерхаб:
+
+> docker commit container_id username/imagename:tag
+> docker push username/imagename:tag
+
+```
+docker ps
+docker commit 558caa816369 decapapreta/ui:1.0
+docker push decapapreta/ui:1.0
+docker ps
+docker commit 2d0e66ae7967 decapapreta/comment:1.0
+docker push decapapreta/comment:1.0
+docker ps
+docker commit 37938786611e decapapreta/post:1.0
+docker push decapapreta/post:1.0
+```
+
+Запускаю шельником в корне src/run_all_4.sh::
+```
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post decapapreta/post:1.0
+docker run -d --network=reddit --network-alias=comment decapapreta/comment:1.0
+docker run -d --network=reddit -p 9292:9292 decapapreta/ui:1.0
+```
+Реально:
+```
+./run_all_4.sh 
+09e1850797c6cd4f48af4fa9ba6952bd6414f4329addb4135819752bdd2fb081
+37938786611e6221db861e002c9411a0f8fd86a29a9454ab8f8ae8b6b6c4e9bb
+2d0e66ae796774b8a7dcb8bb80a984db23719be3fcc59fea4bc7071603cb5d87
+558caa816369325352a4e8787c0542226cf000d0691b727fe6a2f39fbbfd3e54
+```
+```
+docker ps
+CONTAINER ID        IMAGE                     COMMAND                  CREATED             STATUS              PORTS                    NAMES
+558caa816369        decapapreta/ui:1.0        "puma"                   2 minutes ago       Up 2 minutes        0.0.0.0:9292->9292/tcp   gifted_kapitsa
+2d0e66ae7967        decapapreta/comment:1.0   "puma"                   2 minutes ago       Up 2 minutes                                 nostalgic_antonelli
+37938786611e        decapapreta/post:1.0      "python3 post_app.py"    2 minutes ago       Up 2 minutes                                 inspiring_bouman
+09e1850797c6        mongo:latest              "docker-entrypoint.s…"   2 minutes ago       Up 2 minutes        27017/tcp                jolly_brown
+```
+Создал bridge-сеть для контейнеров, запустил наши контейнеры в этой сети
+Добавил сетевые алиасы контейнерам, задание о которых увидел позже.
+http://HOSTNAME:9292/
+Работает!
+
+```
+ docker kill $(docker ps -q)
+```
+### Давайте запустим наш проект в 2-х bridge сетях. Так , чтобы сервис ui не имел доступа к базе данных
+
+Создадим docker-сети
+```
+docker network create back_net --subnet=10.0.2.0/24 \ 
+&& docker network create front_net --subnet=10.0.1.0/24   
+
+ca398bfa986f03fd7c355ffe1e357367b60c0f33180ee80a1d139b4a0526cb2d
+042aa1a3bf38b3c33715eb07e6a64cd2e695a33766166d3b0675c25786658bf4
+```
+Запустим контейнеры
+```
+docker run -d --network=front_net -p 9292:9292 --name ui decapapreta/ui:1.0 \
+ && docker run -d --network=back_net --name comment decapapreta/comment:1.0 \
+ && docker run -d --network=back_net --name post decapapreta/post:1.0 \
+ && docker run -d --network=back_net --name mongo_db --network-alias=post_db --network-alias=comment_db mongo:latest
+
+b55250b315934efe1496b3856d0e4a8f54b9d1021c28309cbc931dc7ae2e521c
+40fe22b4ed1c222be0722e3968303430a90b00f13ff962beef7932c62878c4d0
+892c5853ab09e7943d5dfed4814f1879e2ed09f28a141dde76ef975231898045
+6b1729e58353e0a2c2a5ed0a67be6642c202aa4466ddec5b22c47811c68242f2
+```
+Подключим сеть фронта к 2-м контейнерам:
+```
+docker network connect front_net post \
+ && docker network connect front_net comment
+```
+http://HOSTNAME:9292/
+Работает!
+
+```
+docker kill $(docker ps -q) && docker network remove back_net && docker network remove front_net
+```
+### Давайте посмотрим как выглядит сетевой стек Linux в текущий момент
+
+ssh 
+```
+docker-machine ssh docker-host
+```
+Поставлю сетевые пакеты:
+```
+sudo apt-get update && sudo apt-get install bridge-utils
+```
+Я должен было увидеть список сетей проекта:
+```
+docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+88e602bcb8a5        back_net            bridge              local
+05f7b71a5de9        bridge              bridge              local
+b8362a5f8051        front_net           bridge              local
+bc60eec2e4c6        host                host                local
+92c135628d1c        none                null                local
+```
+К проекту относятся:
+>88e602bcb8a5        back_net            bridge              local
+>b8362a5f8051        front_net           bridge              local
+
+Список бриджей иначе:
+```
+ifconfig | grep br
+br-88e602bcb8a5 Link encap:Ethernet  HWaddr 02:42:3a:ac:49:9a  
+br-b8362a5f8051 Link encap:Ethernet  HWaddr 02:42:a8:17:a4:71
+```
+Информация о интерфейсе одного из бриджей, предварительно создав там докер-контейнер с подключением к бриджу:
+```
+brctl show br-88e602bcb8a5
+bridge name	bridge id		STP enabled	interfaces
+br-88e602bcb8a5		8000.02423aac499a	no		vethd5b48af
+```
+Отображаемые veth-интерфейсы принадлежат докер контейнерам.
+
+Посмотрим на iptables:
+```
+sudo iptables -nL -t nat
+Chain PREROUTING (policy ACCEPT)
+target     prot opt source               destination         
+DOCKER     all  --  0.0.0.0/0            0.0.0.0/0            ADDRTYPE match dst-type LOCAL
+
+Chain INPUT (policy ACCEPT)
+target     prot opt source               destination         
+
+Chain OUTPUT (policy ACCEPT)
+target     prot opt source               destination         
+DOCKER     all  --  0.0.0.0/0           !127.0.0.0/8          ADDRTYPE match dst-type LOCAL
+
+Chain POSTROUTING (policy ACCEPT)
+target     prot opt source               destination         
+MASQUERADE  all  --  10.0.2.0/24          0.0.0.0/0           
+MASQUERADE  all  --  10.0.1.0/24          0.0.0.0/0           
+MASQUERADE  all  --  172.17.0.0/16        0.0.0.0/0           
+MASQUERADE  tcp  --  10.0.1.2             10.0.1.2             tcp dpt:9292
+
+Chain DOCKER (2 references)
+target     prot opt source               destination         
+RETURN     all  --  0.0.0.0/0            0.0.0.0/0           
+RETURN     all  --  0.0.0.0/0            0.0.0.0/0           
+RETURN     all  --  0.0.0.0/0            0.0.0.0/0           
+DNAT       tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:9292 to:10.0.1.2:9292
+```
+Доступ в внешние сети дают правила построутинга:
+```
+MASQUERADE  all  --  10.0.2.0/24          0.0.0.0/0           
+MASQUERADE  all  --  10.0.1.0/24          0.0.0.0/0           
+MASQUERADE  all  --  172.17.0.0/16        0.0.0.0/0
+```
+> DNAT       tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:9292 to:10.0.1.2:9292
+отвечает за перенаправление трафика на адреса уже конкретных
+контейнеров
+
+Этот процесс в данный момент слушает сетевой tcp-порт 9292:
+```
+ps ax | grep docker-proxy
+ 7149 ?        Sl     0:00 /usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9292 -container-ip 10.0.1.2 -container-port 9292
+ 8266 pts/0    S+     0:00 grep --color=auto docker-proxy
+```
+## Docker-compose
+
+Проблемы:
+
+- Одно приложение состоит из множества контейнеров/
+сервисов
+- Один контейнер зависит от другого
+- Порядок запуска имеет значение
+- docker build/run/create … (долго и много)
+
+Плюшки композа:
+
+- Отдельная утилита
+- Декларативное описание docker-инфраструктуры в YAMLформате
+- Управление многоконтейнерными приложениями
+
+### Установка dockercompose
+
+Linux - (https://docs.docker.com/compose/install/#installcompose)
+либо
+> pip install docker-compose
+
+В директории с проектом reddit-microservices, папка
+src, из предыдущего домашнего задания создайте
+файл docker-compose.yml
+
+docker-compose поддерживает интерполяцию
+(подстановку) переменных окружения
+
+Остановим контейнеры, запущенные на предыдущих шагах
+> docker kill $(docker ps -q)
+
+```
+export USERNAME=decapapreta
+
+sudo docker-compose up -d
+Creating network "src_reddit" with the default driver
+Creating src_ui_1      ... done
+Creating src_post_1    ... done
+Creating src_comment_1 ... done
+Creating src_post_db_1 ... done
+
+docker-compose ps
+    Name                  Command             State           Ports         
+----------------------------------------------------------------------------
+src_comment_1   puma                          Up                            
+src_post_1      python3 post_app.py           Up                            
+src_post_db_1   docker-entrypoint.sh mongod   Up      27017/tcp             
+src_ui_1        puma                          Up      0.0.0.0:9292->9292/tcp
+```
+### Свой композ:
+
+В помощь https://docs.docker.com/compose/compose-file/
+
+в файл docker-compose.yml.env вынес:
+```
+MONGO_VER=3.2
+USERNAME=decapapreta
+UI_VER=1.0
+POST_VER=1.0
+COMMENT_VER=1.0
+UI_PORT=80
+```
+В самом yml использовал вариант ${VARIABLE:-default} evaluates to default if VARIABLE is unset or empty in the environment.
+
+```
+version: '3.3'
+services:
+  post_db:
+    image: mongo:${MONGO_VER:-3.2}
+    volumes:
+      - post_db:/data/db
+    networks:
+      back_net:
+        aliases:
+          - post_db
+  ui:
+    build: ./ui
+    image: ${USERNAME:-decapapreta}/ui:${UI_VER:-1.0}
+    ports:
+    - protocol: tcp
+      published: ${UI_PORT:-80}
+      target: 9292
+    networks:
+      front_net:
+        aliases:
+          - ui
+  post:
+    build: ./post-py
+    image: ${USERNAME:-decapapreta}/post:${POST_VER:-1.0}
+    networks:
+      back_net:
+        aliases:
+          - post
+      front_net:
+        aliases:
+          - post
+  comment:
+    build: ./comment
+    image: ${USERNAME:-decapapreta}/comment:${COMMENT_VER:-1.0}
+    networks:
+      back_net:
+        aliases:
+          - comment
+      front_net:
+        aliases:
+          - comment
+
+volumes:
+  post_db:
+
+networks:
+  front_net:
+  back_net:
+
+```
+По умолчанию, все контэйнеры, которые запускаются с помощью docker-compose, используют название текущей директории как префикс. Название этой директории может отличаться в рабочих окружениях у разных разработчиков. Этот префикс (app_) используется, когда мы хотим сослаться на контейнер из основного docker-compose файла. Чтобы зафиксировать этот префикс, нужно создать файл .env в той директории, из которой запускается docker-compose:
+
+COMPOSE_PROJECT_NAME=app
+
+```
+docker-compose -f docker-compose.yml config
+networks:
+  back_net: {}
+  front_net: {}
+services:
+  comment:
+    build:
+      context: /home/sgremyachikh/OTUS/sgremyachikh_microservices/src/comment
+    image: decapapreta/comment:1.0
+    networks:
+      back_net:
+        aliases:
+        - comment
+      front_net:
+        aliases:
+        - comment
+  post:
+    build:
+      context: /home/sgremyachikh/OTUS/sgremyachikh_microservices/src/post-py
+    image: decapapreta/post:1.0
+    networks:
+      back_net:
+        aliases:
+        - post
+      front_net:
+        aliases:
+        - post
+  post_db:
+    image: mongo:3.2
+    networks:
+      back_net:
+        aliases:
+        - post_db
+    volumes:
+    - post_db:/data/db:rw
+  ui:
+    build:
+      context: /home/sgremyachikh/OTUS/sgremyachikh_microservices/src/ui
+    image: decapapreta/ui:1.0
+    networks:
+      front_net:
+        aliases:
+        - ui
+    ports:
+    - protocol: tcp
+      published: 80
+      target: 9292
+version: '3.3'
+volumes:
+  post_db: {}
 ```
