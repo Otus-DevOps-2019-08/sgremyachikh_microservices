@@ -1149,3 +1149,71 @@ version: '3.3'
 volumes:
   post_db: {}
 ```
+
+# HW:19 Устройство Gitlab CI. Построение процесса непрерывной интеграции.
+```
+git checkout -b gitlab-ci-1
+```
+Цель задания
+• Подготовить инсталляцию Gitlab CI
+• Подготовить репозиторий с кодом приложения
+• Описать для приложения этапы пайплайна
+• Определить окружения
+
+## Terraform
+
+В директории terraform файлы для содания структур под ДЗ, связанные с гитлабом, перемещу for_gitlabci_homeworks, где опишу инфраструктуру
+
+мы можем переиспользовать описание инфраструктуры из infra, изменив бэкенд для хранения стейта в бакете, переиспользуем модуль vpc, подправив его возможности, переиспользуем модуль создания виртуалки.
+
+## Ansible
+
+В случае vagrant и terraform нам нужен провижинг машины чтоб не ставить руками.
+В корне репозитория создам директорию ansible/playboks
+gitlabci.yml описывает деплой гитлаба на виртуалку, созданную ваграндом или терраформом
+
+Использована роль
+> https://galaxy.ansible.com/nephelaiio/gitlab
+```
+ansible-galaxy install nephelaiio.gitlab
+```
+Инвентори у нас динамический конечно.
+```
+ansible-inventory --graph
+@all:
+  |--@_gitlabci_homework:
+  |  |--gitlabci-homework
+  |--@gitlabci:
+  |  |--gitlabci-homework
+  |--@ungrouped:
+```
+а в самом инвенторифайле конфиг таков:
+```
+plugin: gcp_compute
+projects: # имя проекта в GCP
+  - docker-258020 
+regions: # регионы моих виртуалок
+  - europe-west1
+keyed_groups: # на основе чего хочу группировать
+    - key: name
+groups: # хочу свои группы с блэкджеком и пилить их буду на основании присутствия частичек нужных в именах
+  gitlabci: "'gitlab' in name"
+hostnames: #хостнейм приятнее айпишника, НО без compose не взлетало
+  # List host by name instead of the default public ip
+  - name
+compose: #
+  # Тутустанвливается параметр сопоставления публичного IP и хоста
+  # Для ip из LAN использовать "networkInterfaces[0].networkIP"
+  ansible_host: networkInterfaces[0].accessConfigs[0].natIP
+filters: []
+auth_kind: serviceaccount # тип авторизации
+service_account_file: ~/.gcp/docker-258020-84d2d673efa5.json # мой секретный ключ от сервисного акка
+```
+```
+cd ansible
+ansible-playbook ./playbooks/gitlabci.yml
+```
+после этого на 80 порту нашей виртуалки засияет веб-мордочка гитлаба.
+
+### Продолжаем основную HW
+

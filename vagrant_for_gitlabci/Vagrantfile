@@ -1,0 +1,21 @@
+Vagrant.configure("2") do |config|
+
+  config.vm.provider :virtualbox do |v|
+    v.memory = 4096
+  end
+
+  config.vm.define "gitlabhomework" do |gitlabhomework|
+    gitlabhomework.vm.box = "ubuntu/xenial64"
+    gitlabhomework.disksize.size = '50GB'
+    gitlabhomework.vm.hostname = "gitlab"
+    gitlabhomework.vm.network "forwarded_port", guest: 80, host: 8080
+    gitlabhomework.vm.network "forwarded_port", guest: 22, host: 2021
+
+    gitlabhomework.vm.provision "ansible" do |ansible|
+      ansible.playbook = "../ansible/playbooks/gitlabci.yml"
+      ansible.groups = {
+        "gitlabhomework" => ["gitlab"]
+        }
+    end
+  end
+end
