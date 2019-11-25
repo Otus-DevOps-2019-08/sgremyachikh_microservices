@@ -8,7 +8,7 @@ resource "google_compute_instance" "app" {
     initialize_params {
       # образ диска для ВМ с приложением
       image = "${var.app_disk_image}"
-      size  = 50
+      size  = 30
     }
   }
   network_interface {
