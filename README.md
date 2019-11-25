@@ -1170,12 +1170,28 @@ git checkout -b gitlab-ci-1
 
 В случае vagrant и terraform нам нужен провижинг машины чтоб не ставить руками.
 В корне репозитория создам директорию ansible/playboks
-gitlabci.yml описывает деплой гитлаба на виртуалку, созданную ваграндом или терраформом
+gitlabci.yml описывает деплой гитлаба на виртуалку, созданную терраформом
+```
+---
+- name: install gitlab
+  hosts: gitlabci-homework
+  become: true
 
-Использована роль
+  roles:
+    - role: nephelaiio.gitlab
+      gitlab_package_state: latest
+    - role: geerlingguy.docker
+...
+
+```
+
+Использованы роли
 > https://galaxy.ansible.com/nephelaiio/gitlab
+> https://galaxy.ansible.com/geerlingguy/docker
+
 ```
 ansible-galaxy install nephelaiio.gitlab
+ansible-galaxy install geerlingguy.docker
 ```
 Инвентори у нас динамический конечно.
 ```
@@ -1224,7 +1240,8 @@ ansible-playbook ./playbooks/gitlabci.yml
 
 Создадим проект в группе. Назовем example, тип бланк, приватный.
 
-В профиле полльзователядобавляю свои SSH ключи чтоб пушить в гитлаб без ввода логина и пароля.
+### В профиле полльзователя добавляю свои SSH ключи.
+Чтоб пушить в гитлаб без ввода логина и пароля.
 http://35.240.36.198/profile/keys
 
 Настрою внешний репозиторий gitlab для работы с ним по SSH. Далее запущу код в репу гитлаба.
@@ -1232,3 +1249,77 @@ http://35.240.36.198/profile/keys
 git remote add gitlab git@35.240.36.198:homeworks/example.git
 git push gitlab gitlab-ci-1
 ```
+### Создам  .gitlab-ci.yml и запушу его.
+
+```
+stages:
+  - build
+  - test
+  - deploy
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  script:
+    - echo 'Testing 1'
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+Теперь в http://35.240.36.198/homeworks/example/pipelines я вижу пайплайн.
+Но находится в статусе pending / stuck так как у нас нет runner.
+
+### Runner
+
+Запустим Runner и зарегистрируем его в интерактивном
+режиме.
+
+Перед тем, как запускать и регистрировать runner
+нужно получить токен.
+
+Settings - CI/CD - Runner Settings
+
+Нужно скопировать, токен пригодится нам при
+регистрации
+
+НАДО БЫЛО НАЙТИ РОЛЬКУ ДЛЯ РАННЕРА, н дело было вечером и сонное...
+зашел в шелл виртуалки:
+```
+sudo docker run -d --name gitlab-runner --restart always \
+-v /srv/gitlab-runner/config:/etc/gitlab-runner \
+-v /var/run/docker.sock:/var/run/docker.sock \
+gitlab/gitlab-runner:latest 
+
+sudo docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
+
+Please enter the gitlab-ci coordinator URL (e.g. https://gitlab.com/):
+http://<YOUR-VM-IP>/
+Please enter the gitlab-ci token for this runner:
+<TOKEN>
+Please enter the gitlab-ci description for this runner:
+[38689f5588fe]: my-runner
+Please enter the gitlab-ci tags for this runner (comma separated):
+linux,xenial,ubuntu,docker
+Please enter the executor:
+docker
+Please enter the default Docker image (e.g. ruby:2.1):
+alpine:latest
+Runner registered successfully
+```
+В итоге вы увидим в вегб-гуе что наш раннер появился и мы можем его использовать.
+
+### CI/CD Pipeline
+
+После добавления Runner пайплайн должен был
+запуститься

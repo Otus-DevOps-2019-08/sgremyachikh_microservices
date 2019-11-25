@@ -6,5 +6,5 @@
   roles:
     - role: nephelaiio.gitlab
       gitlab_package_state: latest
+    - role: geerlingguy.docker
 ...
-
