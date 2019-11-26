@@ -1601,3 +1601,80 @@ master
 Теперь, на каждую ветку в git отличную от master
 Gitlab CI будет определять новое окружение.
 
+## Задачи со *
+
+1. Продумайте автоматизацию развертывания и регистрации
+Gitlab CI Runner. В больших организациях количество Runners
+может превышать 50 и более, сетапить их руками становится
+проблематично.
+Реализацию функционала добавьте в репозиторий в папку
+gitlab-ci.
+
+Для установки раннеров воспользуюсь ролью ansible:
+https://galaxy.ansible.com/riemers/gitlab-runner
+
+
+Установлю ее:
+```
+ansible-galaxy install riemers.gitlab-runner
+```
+Для провижинга ранеров в гуглооблаке использую динамик инвентори:
+```
+plugin: gcp_compute
+projects:
+  - docker-258020 
+regions:
+  - europe-west1
+keyed_groups:
+    - key: name
+groups:
+  gitlabci: "'gitlab' in name"
+  runners: "'runner' in name"
+hostnames:
+  - name
+compose: #
+  ansible_host: networkInterfaces[0].accessConfigs[0].natIP
+filters: []
+auth_kind: serviceaccount
+service_account_file: ~/.gcp/docker-258020-84d2d673efa5.json
+```
+Напишу плейбук gitlab_runners.yml
+
+```
+---
+- name: install gitlab runners
+  hosts: runners
+  become: true
+  vars_files:
+    - vars/main.yml
+
+  roles:
+    - { role: riemers.gitlab-runner }
+...
+
+```
+А к нему vars/main.yml
+
+```
+gitlab_runner_registration_token: 'a1Sugikn4kTQ_hA_zYLe'
+gitlab_runner_coordinator_url: 'http://104.155.106.203/'
+gitlab_runner_runners:
+  - name: 'Example Docker GitLab Runner'
+    executor: docker
+    docker_image: 'ubuntu'
+    tags:
+      - linux
+      - xential
+      - ubuntu
+      - docker
+    docker_volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "/cache"
+    extra_configs:
+      runners.docker:
+        memory: 512m
+        allowed_images: ["ruby:*", "python:*", "php:*"]
+      runners.docker.sysctls:
+        net.ipv4.ip_forward: "1" 
+
+```
