@@ -1568,3 +1568,36 @@ git commit -a -m ‘#4 add logout button to profile page’
 git tag 2.4.10
 git push gitlab gitlab-ci-1 --tags
 ```
+### Динамические окружения
+
+Gitlab CI позволяет определить динамические
+окружения, это мощная функциональность
+позволяет вам иметь выделенный стенд для,
+например, каждой feature-ветки в git.
+Определяются динамические окружения с
+помощью переменных, доступных в .gitlab-ci.yml
+
+```
+...
+deploy_dev_job:
+  stage: review
+  script:
+    - echo  "Deploy to $CI_ENVIRONMENT_SLUG"
+  environment:
+    name: branch/$CI_COMMIT_REF_NAME
+    url: http://$CI_ENVIRONMENT_SLUG.example.com
+  only:
+    - branches
+  except:
+    - master
+...
+```
+Этот job определяет
+динамическое окружение
+для каждой ветки в
+репозитории, кроме ветки
+master
+
+Теперь, на каждую ветку в git отличную от master
+Gitlab CI будет определять новое окружение.
+
