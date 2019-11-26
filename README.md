@@ -1678,3 +1678,12 @@ gitlab_runner_runners:
         net.ipv4.ip_forward: "1" 
 
 ```
+2. Настройте интеграцию вашего Pipeline с тестовым Slack-чатом,
+который вы использовали ранее. Для этого перейдите в Project
+Settings > Integrations > Slack notifications. Нужно установить
+active, выбрать события и заполнить поля с URL вашего Slack
+webhook.
+Добавьте ссылку на канал в слаке, в котором можно проверить
+работу оповещений, в файл README.md
+
+ 
