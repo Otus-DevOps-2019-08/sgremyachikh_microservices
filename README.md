@@ -1414,10 +1414,30 @@ end
 Теперь на каждое изменение в коде приложения
 будет запущен тест
 
-ВАЖНО. переконфигурировал раннер на использование ruby:latest вместо alpine:latest, как сделано на одном из скриншотов. т.к. нне проходили команды для руби.
+ВАЖНО. переконфигурировал раннер на использование ruby:latest вместо alpine:latest, как сделано на одном из скриншотов. т.к. нне проходили команды для руби:
+```
+sudo docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
+Runtime platform                                    arch=amd64 os=linux pid=25 revision=577f813d version=12.5.0
+Running in system-mode.                            
+                                                   
+Please enter the gitlab-ci coordinator URL (e.g. https://gitlab.com/):
+http://104.155.106.203/
+Please enter the gitlab-ci token for this runner:
+a1Sugikn4kTQ_hA_zYLe
+Please enter the gitlab-ci description for this runner:
+[f5aa9387f7cb]: my-runner-ubuntu
+Please enter the gitlab-ci tags for this runner (comma separated):
+linux,xenial,ubuntu,docker
+Registering runner... succeeded                     runner=a1Sugikn
+Please enter the executor: virtualbox, docker+machine, docker-ssh+machine, docker, parallels, shell, kubernetes, custom, docker-ssh, ssh:
+docker
+Please enter the default Docker image (e.g. ruby:2.6):
+ruby:latest
+Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
+```
 
 после успешного завешения пайплайна с
-определением окружения перейти в CI/CD >
+определением окружения перейти в OPERATIONS >
 Environments, то там появится определение первого
-окружения.
+окружения. (в методичке ошибка)
 

@@ -11,8 +11,8 @@ class MyAppTest < Test::Unit::TestCase
     Sinatra::Application
   end
 
-  def test_get_request
-    get '/'
-    assert last_response.ok?
-  end
+#  def test_get_request
+#   get '/'
+#    assert last_response.ok?
+#  end
 end
