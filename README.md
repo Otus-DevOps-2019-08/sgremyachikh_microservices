@@ -1339,4 +1339,75 @@ Runner registered successfully. Feel free to start it, but if it's running alrea
 
 После добавления Runner вижу, что пайплайн выполнился успешно.
 
+Добавим исходный код reddit в репозиторий
 
+> git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git
+> git add reddit/
+> git commit -m “Add reddit app”
+> git push gitlab gitlab-ci-1
+
+далее сделаю изменения в скрипте пайплайна:
+
+```
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+
+before_script:
+    - cd reddit
+    - bundle install 
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+В описании pipeline мы добавили вызов теста в файле simpletest.rb,
+нужно создать его в папке reddit
+
+```
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+  def test_get_request
+    get '/'
+    assert last_response.ok?
+  end
+end
+```
+Последним шагом нам нужно добавить библиотеку
+для тестирования в reddit/Gemfile приложения.
+Добавим gem 'rack-test'
+Теперь на каждое изменение в коде приложения
+будет запущен тест
