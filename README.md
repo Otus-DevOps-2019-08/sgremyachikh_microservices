@@ -1244,7 +1244,7 @@ ansible-playbook ./playbooks/gitlabci.yml
 
 https://docs.gitlab.com/omnibus/settings/configuration.html
 
-In order for GitLab to display correct repository clone links to your users it needs to know the URL under which it is reached by your users, e.g. http://gitlab.example.com. Add or edit the following line in /etc/gitlab/gitlab.rb:
+In order for GitLab to display correct repository clone links to your users it needs to know the URL under which it is reached by your users, e.g. http://gitlab.example.com. Add or edit the following line in :
 
 > external_url "http://gitlab.example.com"
 
@@ -1252,7 +1252,6 @@ In order for GitLab to display correct repository clone links to your users it n
 ```
 sudo gitlab-ctl reconfigure
 ```
-
 
 ### В профиле полльзователя добавляю свои SSH ключи.
 Чтоб пушить в гитлаб без ввода логина и пароля.
@@ -1316,24 +1315,28 @@ sudo docker run -d --name gitlab-runner --restart always \
 gitlab/gitlab-runner:latest 
 
 sudo docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
-
+Runtime platform                                    arch=amd64 os=linux pid=12 revision=577f813d version=12.5.0
+Running in system-mode.                            
+                                                   
 Please enter the gitlab-ci coordinator URL (e.g. https://gitlab.com/):
-http://<YOUR-VM-IP>/
+http://104.155.106.203/
 Please enter the gitlab-ci token for this runner:
-<TOKEN>
+a1Sugikn4kTQ_hA_zYLe
 Please enter the gitlab-ci description for this runner:
-[38689f5588fe]: my-runner
+[34275fb2e57d]: my-runner
 Please enter the gitlab-ci tags for this runner (comma separated):
 linux,xenial,ubuntu,docker
-Please enter the executor:
+Registering runner... succeeded                     runner=a1Sugikn
+Please enter the executor: docker, docker-ssh, parallels, virtualbox, docker-ssh+machine, kubernetes, custom, shell, ssh, docker+machine:
 docker
-Please enter the default Docker image (e.g. ruby:2.1):
+Please enter the default Docker image (e.g. ruby:2.6):
 alpine:latest
-Runner registered successfully
+Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
 ```
 В итоге вы увидим в вегб-гуе что наш раннер появился и мы можем его использовать.
 
 ### CI/CD Pipeline
 
-После добавления Runner пайплайн должен был
-запуститься
+После добавления Runner вижу, что пайплайн выполнился успешно.
+
+
