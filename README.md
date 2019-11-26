@@ -1240,13 +1240,27 @@ ansible-playbook ./playbooks/gitlabci.yml
 
 Создадим проект в группе. Назовем example, тип бланк, приватный.
 
+### Важный момент:
+
+https://docs.gitlab.com/omnibus/settings/configuration.html
+
+In order for GitLab to display correct repository clone links to your users it needs to know the URL under which it is reached by your users, e.g. http://gitlab.example.com. Add or edit the following line in /etc/gitlab/gitlab.rb:
+
+> external_url "http://gitlab.example.com"
+
+потом
+```
+sudo gitlab-ctl reconfigure
+```
+
+
 ### В профиле полльзователя добавляю свои SSH ключи.
 Чтоб пушить в гитлаб без ввода логина и пароля.
-http://35.240.36.198/profile/keys
+http://VM_IP/profile/keys
 
 Настрою внешний репозиторий gitlab для работы с ним по SSH. Далее запущу код в репу гитлаба.
 ```
-git remote add gitlab git@35.240.36.198:homeworks/example.git
+git remote add gitlab git@VM_IP:homeworks/example.git
 git push gitlab gitlab-ci-1
 ```
 ### Создам  .gitlab-ci.yml и запушу его.
