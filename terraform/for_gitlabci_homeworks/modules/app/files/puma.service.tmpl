@@ -1,0 +1,15 @@
+[Unit]
+Description=Puma HTTP Server
+After=network.target
+
+[Service]
+EnvironmentFile=${APP_DIR}/puma.env
+Type=simple
+User=${USER}
+WorkingDirectory=${APP_DIR}
+ExecStart=/bin/bash -lc 'puma'
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+ 

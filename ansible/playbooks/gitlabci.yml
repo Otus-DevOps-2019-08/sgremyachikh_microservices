@@ -1,0 +1,10 @@
+---
+- name: install gitlab
+  hosts: gitlabci-homework
+  become: true
+
+  roles:
+    - role: nephelaiio.gitlab
+      gitlab_package_state: latest
+    - role: geerlingguy.docker
+...

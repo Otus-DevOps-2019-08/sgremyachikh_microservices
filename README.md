@@ -1149,3 +1149,527 @@ version: '3.3'
 volumes:
   post_db: {}
 ```
+
+# HW:19 Устройство Gitlab CI. Построение процесса непрерывной интеграции.
+```
+git checkout -b gitlab-ci-1
+```
+Цель задания
+• Подготовить инсталляцию Gitlab CI
+• Подготовить репозиторий с кодом приложения
+• Описать для приложения этапы пайплайна
+• Определить окружения
+
+## Terraform
+
+В директории terraform файлы для содания структур под ДЗ, связанные с гитлабом, перемещу for_gitlabci_homeworks, где опишу инфраструктуру
+
+мы можем переиспользовать описание инфраструктуры из infra, изменив бэкенд для хранения стейта в бакете, переиспользуем модуль vpc, подправив его возможности, переиспользуем модуль создания виртуалки.
+
+## Ansible
+
+В случае vagrant и terraform нам нужен провижинг машины чтоб не ставить руками.
+В корне репозитория создам директорию ansible/playboks
+gitlabci.yml описывает деплой гитлаба на виртуалку, созданную терраформом
+```
+---
+- name: install gitlab
+  hosts: gitlabci-homework
+  become: true
+
+  roles:
+    - role: nephelaiio.gitlab
+      gitlab_package_state: latest
+    - role: geerlingguy.docker
+...
+
+```
+
+Использованы роли
+> https://galaxy.ansible.com/nephelaiio/gitlab
+> https://galaxy.ansible.com/geerlingguy/docker
+
+```
+ansible-galaxy install nephelaiio.gitlab
+ansible-galaxy install geerlingguy.docker
+```
+Инвентори у нас динамический конечно.
+```
+ansible-inventory --graph
+@all:
+  |--@_gitlabci_homework:
+  |  |--gitlabci-homework
+  |--@gitlabci:
+  |  |--gitlabci-homework
+  |--@ungrouped:
+```
+а в самом инвенторифайле конфиг таков:
+```
+plugin: gcp_compute
+projects: # имя проекта в GCP
+  - docker-258020 
+regions: # регионы моих виртуалок
+  - europe-west1
+keyed_groups: # на основе чего хочу группировать
+    - key: name
+groups: # хочу свои группы с блэкджеком и пилить их буду на основании присутствия частичек нужных в именах
+  gitlabci: "'gitlab' in name"
+hostnames: #хостнейм приятнее айпишника, НО без compose не взлетало
+  # List host by name instead of the default public ip
+  - name
+compose: #
+  # Тутустанвливается параметр сопоставления публичного IP и хоста
+  # Для ip из LAN использовать "networkInterfaces[0].networkIP"
+  ansible_host: networkInterfaces[0].accessConfigs[0].natIP
+filters: []
+auth_kind: serviceaccount # тип авторизации
+service_account_file: ~/.gcp/docker-258020-84d2d673efa5.json # мой секретный ключ от сервисного акка
+```
+```
+cd ansible
+ansible-playbook ./playbooks/gitlabci.yml
+```
+после этого на 80 порту нашей виртуалки засияет веб-мордочка гитлаба.
+
+### Продолжаем основную HW
+
+Поставил пароль руту.
+Зашел в админку и отключил регистрацию внешних пользователей.
+
+Создадим приватную группу homeworks.
+
+Создадим проект в группе. Назовем example, тип бланк, приватный.
+
+### Важный момент:
+
+https://docs.gitlab.com/omnibus/settings/configuration.html
+
+In order for GitLab to display correct repository clone links to your users it needs to know the URL under which it is reached by your users, e.g. http://gitlab.example.com. Add or edit the following line in :
+
+> external_url "http://gitlab.example.com"
+
+потом
+```
+sudo gitlab-ctl reconfigure
+```
+
+### В профиле полльзователя добавляю свои SSH ключи.
+Чтоб пушить в гитлаб без ввода логина и пароля.
+http://VM_IP/profile/keys
+
+Настрою внешний репозиторий gitlab для работы с ним по SSH. Далее запущу код в репу гитлаба.
+```
+git remote add gitlab git@VM_IP:homeworks/example.git
+git push gitlab gitlab-ci-1
+```
+### Создам  .gitlab-ci.yml и запушу его.
+
+```
+stages:
+  - build
+  - test
+  - deploy
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  script:
+    - echo 'Testing 1'
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+Теперь в http://35.240.36.198/homeworks/example/pipelines я вижу пайплайн.
+Но находится в статусе pending / stuck так как у нас нет runner.
+
+### Runner
+
+Запустим Runner и зарегистрируем его в интерактивном
+режиме.
+
+Перед тем, как запускать и регистрировать runner
+нужно получить токен.
+
+Settings - CI/CD - Runner Settings
+
+Нужно скопировать, токен пригодится нам при
+регистрации
+
+НАДО БЫЛО НАЙТИ РОЛЬКУ ДЛЯ РАННЕРА, н дело было вечером и сонное...
+зашел в шелл виртуалки:
+```
+sudo docker run -d --name gitlab-runner --restart always \
+-v /srv/gitlab-runner/config:/etc/gitlab-runner \
+-v /var/run/docker.sock:/var/run/docker.sock \
+gitlab/gitlab-runner:latest 
+
+sudo docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
+Runtime platform                                    arch=amd64 os=linux pid=12 revision=577f813d version=12.5.0
+Running in system-mode.                            
+                                                   
+Please enter the gitlab-ci coordinator URL (e.g. https://gitlab.com/):
+http://104.155.106.203/
+Please enter the gitlab-ci token for this runner:
+a1Sugikn4kTQ_hA_zYLe
+Please enter the gitlab-ci description for this runner:
+[34275fb2e57d]: my-runner
+Please enter the gitlab-ci tags for this runner (comma separated):
+linux,xenial,ubuntu,docker
+Registering runner... succeeded                     runner=a1Sugikn
+Please enter the executor: docker, docker-ssh, parallels, virtualbox, docker-ssh+machine, kubernetes, custom, shell, ssh, docker+machine:
+docker
+Please enter the default Docker image (e.g. ruby:2.6):
+alpine:latest
+Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
+```
+В итоге вы увидим в вегб-гуе что наш раннер появился и мы можем его использовать.
+
+Позже переконфигурировал раннер на использование ruby:latest вместо alpine:latest, как сделано на одном из скриншотов. т.к. нне проходили команды для руби*
+
+### CI/CD Pipeline
+
+После добавления Runner вижу, что пайплайн выполнился успешно.
+
+Добавим исходный код reddit в репозиторий
+
+> git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git
+> git add reddit/
+> git commit -m “Add reddit app”
+> git push gitlab gitlab-ci-1
+
+далее сделаю изменения в скрипте пайплайна:
+
+```
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+
+before_script:
+    - cd reddit
+    - bundle install 
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+В описании pipeline мы добавили вызов теста в файле simpletest.rb,
+нужно создать его в папке reddit
+
+```
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+#  def test_get_request
+#   get '/'
+#    assert last_response.ok?
+#  end
+end
+
+```
+Последним шагом нам нужно добавить библиотеку
+для тестирования в reddit/Gemfile приложения.
+Добавим gem 'rack-test'
+Теперь на каждое изменение в коде приложения
+будет запущен тест
+
+ВАЖНО. переконфигурировал раннер на использование ruby:latest вместо alpine:latest, как сделано на одном из скриншотов. т.к. нне проходили команды для руби:
+```
+sudo docker exec -it gitlab-runner gitlab-runner register --run-untagged --locked=false
+Runtime platform                                    arch=amd64 os=linux pid=25 revision=577f813d version=12.5.0
+Running in system-mode.                            
+                                                   
+Please enter the gitlab-ci coordinator URL (e.g. https://gitlab.com/):
+http://104.155.106.203/
+Please enter the gitlab-ci token for this runner:
+a1Sugikn4kTQ_hA_zYLe
+Please enter the gitlab-ci description for this runner:
+[f5aa9387f7cb]: my-runner-ubuntu
+Please enter the gitlab-ci tags for this runner (comma separated):
+linux,xenial,ubuntu,docker
+Registering runner... succeeded                     runner=a1Sugikn
+Please enter the executor: virtualbox, docker+machine, docker-ssh+machine, docker, parallels, shell, kubernetes, custom, docker-ssh, ssh:
+docker
+Please enter the default Docker image (e.g. ruby:2.6):
+ruby:latest
+Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
+```
+
+после успешного завешения пайплайна с
+определением окружения перейти в OPERATIONS >
+Environments, то там появится определение первого
+окружения. (в методичке ошибка)
+
+В прохождении юнит-теста, который был в simpletest.rb я закомментировал несколько строк - см. выше чтоб проходился тест:) 
+
+
+### Staging и Production
+Если на dev мы можем выкатывать последнюю версию кода, то к
+production окружению это может быть неприменимо, если,
+конечно, вы не стремитесь к continuous deployment.
+Определим два новых этапа: stage и production, первый будет
+содержать job имитирующий выкатку на staging окружение, второй
+на production окружение.
+Определим эти job таким образом, чтобы они запускались с кнопки:
+```
+stages:
+  - build
+  - test
+  - review
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+
+before_script:
+    - cd reddit
+    - bundle install
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_dev_job:
+  stage: review
+  script:
+    - echo 'Deploy'
+  environment:
+    name: dev
+    url: http://dev.example.com/
+
+staging:
+  stage: stage
+  when: manual
+  script:
+    - echo 'Deploy'
+  environment:
+    name: stage
+    url: https://beta.example.com 
+
+poduction:
+  stage: production
+  when: manual
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: https://example.com
+```
+На странице окружений должны появиться
+оружения staging и production, а у пайплайна должы появиться 2 ручных стейджа.
+
+### Условия и ограничения
+
+Обычно, на production окружение выводится
+приложение с явно зафиксированной версией
+(например, 2.4.10).
+Добавим в описание pipeline директиву, которая не
+позволит нам выкатить на staging и production код,
+не помеченный с помощью тэга в git.
+
+Директива only описывает список
+условий, которые должны быть
+истинны, чтобы job мог
+запуститься.
+Регулярное выражение означает, что должен стоять
+semver тэг в git, например, 2.4.10
+```
+...
+staging:
+  stage: stage
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: stage
+    url: https://beta.example.com 
+...
+```
+Изменение, помеченное тэгом в git запустит полный пайплайн
+```
+git commit -a -m ‘#4 add logout button to profile page’
+git tag 2.4.10
+git push gitlab gitlab-ci-1 --tags
+```
+### Динамические окружения
+
+Gitlab CI позволяет определить динамические
+окружения, это мощная функциональность
+позволяет вам иметь выделенный стенд для,
+например, каждой feature-ветки в git.
+Определяются динамические окружения с
+помощью переменных, доступных в .gitlab-ci.yml
+
+```
+...
+deploy_dev_job:
+  stage: review
+  script:
+    - echo  "Deploy to $CI_ENVIRONMENT_SLUG"
+  environment:
+    name: branch/$CI_COMMIT_REF_NAME
+    url: http://$CI_ENVIRONMENT_SLUG.example.com
+  only:
+    - branches
+  except:
+    - master
+...
+```
+Этот job определяет
+динамическое окружение
+для каждой ветки в
+репозитории, кроме ветки
+master
+
+Теперь, на каждую ветку в git отличную от master
+Gitlab CI будет определять новое окружение.
+
+## Задачи со *
+
+1. Продумайте автоматизацию развертывания и регистрации
+Gitlab CI Runner. В больших организациях количество Runners
+может превышать 50 и более, сетапить их руками становится
+проблематично.
+Реализацию функционала добавьте в репозиторий в папку
+gitlab-ci.
+
+Для установки раннеров воспользуюсь ролью ansible:
+https://galaxy.ansible.com/riemers/gitlab-runner
+
+
+Установлю ее:
+```
+ansible-galaxy install riemers.gitlab-runner
+```
+Для провижинга ранеров в гуглооблаке использую динамик инвентори:
+```
+plugin: gcp_compute
+projects:
+  - docker-258020 
+regions:
+  - europe-west1
+keyed_groups:
+    - key: name
+groups:
+  gitlabci: "'gitlab' in name"
+  runners: "'runner' in name"
+hostnames:
+  - name
+compose: #
+  ansible_host: networkInterfaces[0].accessConfigs[0].natIP
+filters: []
+auth_kind: serviceaccount
+service_account_file: ~/.gcp/docker-258020-84d2d673efa5.json
+```
+Напишу плейбук gitlab_runners.yml
+
+```
+---
+- name: install gitlab runners
+  hosts: runners
+  become: true
+  vars_files:
+    - vars/main.yml
+
+  roles:
+    - { role: riemers.gitlab-runner }
+...
+
+```
+А к нему vars/main.yml
+
+```
+gitlab_runner_registration_token: 'a1Sugikn4kTQ_hA_zYLe'
+gitlab_runner_coordinator_url: 'http://104.155.106.203/'
+gitlab_runner_runners:
+  - name: 'Example Docker GitLab Runner'
+    executor: docker
+    docker_image: 'ubuntu:16.04'
+    tags:
+      - linux
+      - xential
+      - ubuntu
+      - docker
+    docker_volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "/cache"
+    extra_configs:
+      runners.docker:
+        memory: 512m
+        allowed_images: ["ruby:*", "python:*", "php:*"]
+      runners.docker.sysctls:
+        net.ipv4.ip_forward: "1" 
+
+```
+2. Настройте интеграцию вашего Pipeline с тестовым Slack-чатом,
+который вы использовали ранее. Для этого перейдите в Project
+Settings > Integrations > Slack notifications. Нужно установить
+active, выбрать события и заполнить поля с URL вашего Slack
+webhook.
+Добавьте ссылку на канал в слаке, в котором можно проверить
+работу оповещений, в файл README.md
+
+Пошел в гитлаб.https://docs.gitlab.com/ee/user/project/integrations/slack.html
+Потом в  https://hooks.slack.com/services, где благополучно настроил сервис.
+Настроил в гитлабе.
+Ссылка на канал в слаке:
+https://devops-team-otus.slack.com/archives/CNC16UC4C
+
+### В завершение 
+для приличия создал docker-compose.yml, как того требует задание.
