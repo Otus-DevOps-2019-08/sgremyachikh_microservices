@@ -1686,7 +1686,7 @@ webhook.
 Добавьте ссылку на канал в слаке, в котором можно проверить
 работу оповещений, в файл README.md
 
-Пошел в гитлаб.
+Пошел в гитлаб.https://docs.gitlab.com/ee/user/project/integrations/slack.html
 Потом в  https://hooks.slack.com/services, где благополучно настроил сервис.
 Настроил в гитлабе.
 Ссылка на канал в слаке:
