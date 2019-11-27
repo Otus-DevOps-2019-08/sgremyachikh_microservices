@@ -1640,7 +1640,7 @@ gitlab_runner_coordinator_url: 'http://104.155.106.203/'
 gitlab_runner_runners:
   - name: 'Example Docker GitLab Runner'
     executor: docker
-    docker_image: 'ubuntu'
+    docker_image: 'ubuntu:16.04'
     tags:
       - linux
       - xential
