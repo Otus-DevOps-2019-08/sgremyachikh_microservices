@@ -1,3 +1,5 @@
+image: ruby:2.4.2
+
 stages:
   - build
   - test

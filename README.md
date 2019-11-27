@@ -1692,3 +1692,5 @@ webhook.
 Ссылка на канал в слаке:
 https://devops-team-otus.slack.com/archives/CNC16UC4C
 
+### В завершение 
+для приличия создал docker-compose.yml, как того требует задание.
