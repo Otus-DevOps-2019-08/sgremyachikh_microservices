@@ -1443,28 +1443,7 @@ Environments, то там появится определение первого
 окружения. (в методичке ошибка)
 
 В прохождении юнит-теста, который был в simpletest.rb я закомментировал несколько строк - см. выше чтоб проходился тест:) 
-```
-/usr/local/bundle/gems/rack-test-1.1.0/lib/rack/test.rb:58:in `get'
-/usr/local/lib/ruby/2.6.0/forwardable.rb:230:in `get'
-simpletest.rb:15:in `test_get_request'
-     12:   end
-     13: 
-     14:   def test_get_request
-  => 15:     get '/'
-     16:     assert last_response.ok?
-     17:   end
-     18: end
-===============================================================================
 
-Finished in 30.529579323 seconds.
--------------------------------------------------------------------------------
-1 tests, 0 assertions, 0 failures, 1 errors, 0 pendings, 0 omissions, 0 notifications
-0% passed
--------------------------------------------------------------------------------
-0.03 tests/s, 0.00 assertions/s
-ERROR: Job failed: exit code 1
-```
-Сейчас проблема устранена.
 
 ### Staging и Production
 Если на dev мы можем выкатывать последнюю версию кода, то к
