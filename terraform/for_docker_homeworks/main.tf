@@ -17,7 +17,14 @@ module "vpc" {
   source        = "./modules/vpc"
   source_ranges = var.source_ranges
   environment   = var.environment
-} 
+}
+
+# модуль для доступа к 9090 и 9292 портам
+module "firewall" {
+  source        = "./modules/firewall"
+  source_ranges = var.source_ranges
+  environment   = var.environment
+}
 
 # Добавляю глобальную метадату в виде ключей своего юзера
 resource "google_compute_project_metadata_item" "ssh-keys" {
