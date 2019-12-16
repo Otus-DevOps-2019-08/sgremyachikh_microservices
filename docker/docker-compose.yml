@@ -9,6 +9,7 @@ services:
         aliases:
           - post_db
           - comment_db
+
   ui:
     image: ${USERNAME:-decapapreta}/ui:${UI_VER:-1.0}
     ports:
@@ -19,6 +20,7 @@ services:
       front_net:
         aliases:
           - ui
+
   post:
     image: ${USERNAME:-decapapreta}/post:${POST_VER:-1.0}
     networks:
@@ -28,6 +30,7 @@ services:
       front_net:
         aliases:
           - post
+
   comment:
     image: ${USERNAME:-decapapreta}/comment:${COMMENT_VER:-1.0}
     networks:
@@ -37,6 +40,7 @@ services:
       front_net:
         aliases:
           - comment
+
   prometheus:
     image: ${USERNAME}/prometheus
     networks:
@@ -54,6 +58,7 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention=1d'
+
   node-exporter:
     image: prom/node-exporter:v0.15.2
     networks:
@@ -72,6 +77,13 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+
+  mongodb-exporter:
+    image: ${USERNAME:-decapapreta}/mongodb-exporter:${MONGODB_EXPORTER_VERSION:-v2019.12.14}
+    networks:
+      - back_net
+    environment:
+      MONGODB_URI: "mongodb://post_db:27017"
 
 volumes:
   prometheus_data:

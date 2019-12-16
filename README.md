@@ -2148,3 +2148,80 @@ $ docker-compose up -d
 запушил все в докер-хаб
 https://hub.docker.com/u/decapapreta
 
+## Задание со *
+
+Добавьте в Prometheus мониторинг MongoDB с
+использованием необходимого экспортера
+
+Проект dcu/mongodb_exporter не самый лучший вариант,
+т.к. у него есть проблемы с поддержкой (не обновляется) 
+
+Версию образа экспортера нужно фиксировать на
+последнюю стабильную
+
+Посмотрел https://github.com/prometheus/prometheus/wiki/Default-port-allocations
+Выбор пал на https://github.com/percona/mongodb_exporter
+Вендор известный и крупный.
+
+По ридми https://github.com/percona/mongodb_exporter/blob/master/README.md:
+
+cd ./monitoring
+git clone https://github.com/percona/mongodb_exporter.git
+cd mongodb_exporter
+make docker
+...
+Successfully built 04a4999784df
+Successfully tagged mongodb-exporter:master
+
+но это не фиксирует версию.
+тогда я зашел в мейкфайл, подхачил его:
+
+DOCKER_IMAGE_NAME   ?= decapapreta/mongodb-exporter
+DOCKER_IMAGE_TAG    ?= v2019.12.14
+
+затем:
+make docker
+...
+Successfully built 04a4999784df
+Successfully tagged decapapreta/mongodb-exporter:v2019.12.14
+
+docker push decapapreta/mongodb-exporter:v2019.12.14
+таким образом у меня есть докер-образ с фиксированной стабильной версией экспортера.
+
+Добавлю мониторинг в docker/docker-compose.yml как еще один сервис:
+
+```
+  mongodb-exporter:
+    image: ${USERNAME:-decapapreta}/mongodb-exporter:${MONGODB_EXPORTER_VERSION:-v2019.12.14}
+    networks:
+      - back_net
+    environment:
+      MONGODB_URI: "mongodb://post_db:27017"
+```
+А прому добавлю джоб для экспортера монги:
+```
+scrape_config:
+  ...
+  - job_name: "post_db"
+    static_configs:
+      - targets:
+        - "mongodb-exporter:9216"
+```
+Не забудем собрать новый Docker для Prometheus:
+monitoring/prometheus $ docker build -t $USER_NAME/prometheus .
+
+Для проверки 
+```
+docker-compose up -d
+```
+В гуе прома вводим mongodb и смотрим сколько всего теперь доступно для снятия метрик.
+
+Так же показательно что mongodb_exporter_build_info{branch="",goversion="go1.11.13",instance="mongodb-exporter:9216",job="post_db",revision="",version=""} имеет велью 1 - данные есть:)
+В .gitignore добавлена строка
+
+monitoring/mongodb_exporter
+
+## Задание со *
+Добавьте в Prometheus мониторинг сервисов comment, post, ui с
+помощью blackbox экспортера. 
+Данное задание оставляю на потом по причине отставания и необходимости нагнать программу.
