@@ -1690,6 +1690,7 @@ Web UI
 
 Вообще все в облаке должно быть в коде.
 В sgremyachikh_microservices/terraform/bucket_creation/ - там создание бакета в проекте GCE. 
+
 В sgremyachikh_microservices/terraform/for_docker_homeworks/ - код проапгрейжен модулем firewall, создаст стейт инфраструктуры в бакете, созданные правила для 22, 9090, 9292 портов в облаке для провижена, ключи для ssh в GCE,. Так как все должнобыть *aaC.
 
 ### docker-machine:
@@ -2233,3 +2234,242 @@ monitoring/mongodb_exporter
 Можно было бы конечно написать скрипт для автоматизации таких действий.
 Но гораздо лучше для этого использовать Makefile. 
 Данное задание оставляю на потом по причине отставания и необходимости нагнать программу.
+
+# HW 21. Мониторинг приложения и инфраструктуры 
+Мониторинг приложения и инфраструктуры
+
+Создадим Docker хост в GCE и настроим локальное окружение на
+работу с ним.
+
+## Подготовка окружения 
+
+### Terraform:
+
+Вообще все в облаке должно быть в коде.
+В sgremyachikh_microservices/terraform/bucket_creation/ - там создание бакета в проекте GCE. 
+
+В sgremyachikh_microservices/terraform/for_docker_homeworks/ - код проапгрейжен модулем firewall, создаст стейт инфраструктуры в бакете, созданные правила для 22, 9090, 9292 портов в облаке для провижена, ключи для ssh в GCE,. Так как все должнобыть *aaC.
+
+### docker-machine:
+
+В директории docker-machine-scripts скрипт развертыввния среды разработки ДЗ и скрипт свертывания. 
+
+## Мониторинг Docker контейнеров
+Разделим файлы Docker Compose:
+В данный момент и мониторинг и приложения у нас описаны в
+одном большом docker-compose.yml. С одной стороны это просто,
+а с другой - мы смешиваем различные сущности, и сам файл быстро
+растет.
+Оставим описание приложений в docker-compose.yml, а
+мониторинг выделим в отдельный файл docker-composemonitoring.yml.
+Для запуска приложений будем как и ранее использовать
+docker-compose up -d, а для мониторинга - docker-compose -f
+docker-compose-monitoring.yml up -d
+
+Листинги:
+```
+version: '3.3'
+services:
+  post_db:
+    image: mongo:${MONGO_VER:-3.2}
+    volumes:
+      - post_db:/data/db
+    networks:
+      back_net:
+        aliases:
+          - post_db
+          - comment_db
+
+  ui:
+    image: ${USERNAME:-decapapreta}/ui:${UI_VER:-1.0}
+    ports:
+    - protocol: tcp
+      published: ${UI_PORT:-9292}
+      target: 9292
+    networks:
+      front_net:
+        aliases:
+          - ui
+
+  post:
+    image: ${USERNAME:-decapapreta}/post:${POST_VER:-1.0}
+    networks:
+      back_net:
+        aliases:
+          - post
+      front_net:
+        aliases:
+          - post
+
+  comment:
+    image: ${USERNAME:-decapapreta}/comment:${COMMENT_VER:-1.0}
+    networks:
+      back_net:
+        aliases:
+          - comment
+      front_net:
+        aliases:
+          - comment
+
+volumes:
+  post_db:
+
+networks:
+  front_net:
+  back_net:
+
+```
+и
+```
+version: '3.3'
+services:
+  prometheus:
+    image: ${USERNAME}/prometheus
+    networks:
+      back_net:
+        aliases:
+          - prom
+      front_net:
+        aliases:
+          - prom
+    ports:
+      - '9090:9090'
+    volumes:
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention=1d'
+
+  node-exporter:
+    image: prom/node-exporter:v0.15.2
+    networks:
+      back_net:
+        aliases:
+          - node-exporter
+      front_net:
+        aliases:
+          - node-exporter
+    user: root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+
+  mongodb-exporter:
+    image: ${USERNAME:-decapapreta}/mongodb-exporter:${MONGODB_EXPORTER_VERSION:-v2019.12.14}
+    networks:
+      - back_net
+    environment:
+      MONGODB_URI: "mongodb://post_db:27017"
+
+volumes:
+  prometheus_data:
+
+networks:
+  front_net:
+  back_net:
+
+```
+Сделал это и проверил на всякий случай. что работают нормально.
+
+## cAdvisor
+Мы будем использовать для
+наблюдения за состоянием наших Docker
+контейнеров.
+cAdvisor собирает информацию о ресурсах потребляемых
+контейнерами и характеристиках их работы.
+Примерами метрик являются:
+процент использования контейнером CPU и памяти, выделенные
+для его запуска,
+объем сетевого трафика
+и др.
+
+### В Файл docker-compose-monitoring.yml
+cAdvisor также будем запускать в контейнере. Для этого
+добавим новый сервис в наш компоуз файл мониторинга dockercompose-monitoring.yml ( ).
+Поместите данный сервис в одну сеть с Prometheus, чтобы тот
+мог собирать с него метрики.
+
+```
+services:
+...
+  cadvisor:
+    image: google/cadvisor:v0.29.0
+    networks:
+      back_net:
+        aliases:
+          - cadvisor
+      front_net:
+        aliases:
+          - cadvisor
+    volumes:
+      - '/:/rootfs:ro'
+      - '/var/run:/var/run:rw'
+      - '/sys:/sys:ro'
+      - '/var/lib/docker/:/var/lib/docker:ro'
+    ports:
+      - '8080:8080'
+```
+### Файл prometheus.yml
+Добавим информацию о новом сервисе в конфигурацию
+Prometheus, чтобы он начал собирать метрики:
+Пересоберем образ Prometheus с обновленной конфигурацией:
+scrape_configs:
+...
+- job_name: 'cadvisor'
+static_configs:
+- targets:
+- 'cadvisor:8080'
+$ export USER_NAME=username # где username - ваш логин на Docker Hub
+$ docker build -t $USER_NAME/prometheus .
+
+### cAdvisor UI
+Запустим сервисы:
+cAdvisor имеет UI, в котором отображается собираемая о
+контейнерах информация.
+Откроем страницу Web UI по адресу http://<docker-machinehost-ip>:8080
+
+### cAdvisor UI
+
+Полазил. посмотрел, классно.
+
+Нажмите ссылку Docker Containers (внизу слева) для просмотра
+информации по контейнерам
+В UI мы можем увидеть: список контейнеров, запущенных на хосте
+информацию о хосте (секция Driver Status)
+информацию об образах контейнеров (секция Images)
+
+Нажмем на название одного из контейнеров, чтобы посмотреть
+информацию о его работе:
+```
+Subcontainers
+dockermicroservices_mongodb-exporter_1 (/docker/586bbe5ce2e6c19663b578b8421cd32d0cc023c8dc45afeaa380d7d26b69997b)
+dockermicroservices_post_1 (/docker/af2b365ffa86fe10b3403b453e050ab06bbb5c6995df86d6ced9e3e134ddde5c)
+dockermicroservices_cadvisor_1 (/docker/df32f7ba62c9f286d7379446dc190a78792271f29fd45402955a332a369392cb)
+dockermicroservices_post_db_1 (/docker/f17c928f2a7c3e49eccdd62b7c6dfc56d5a030bb1c77449771321b4019b35e8a)
+dockermicroservices_comment_1 (/docker/7b2c417263d40dbb71dd64c2263a681276c05c5204d8704c1a40b10c856b58be)
+dockermicroservices_node-exporter_1 (/docker/0edc9754bdfbb63e2fcea0e41262213b348a891bb18e3e7e10b162ff20e85ee0)
+dockermicroservices_ui_1 (/docker/252f323206d24e052690b26ca9adacf7fd90f57b64b6df64506a235c77824527)
+dockermicroservices_prometheus_1 (/docker/d8df91f6378f7ecbe73a8fc0aed33857ea0f6ee4b1307142297b23c57a4d81db)
+```
+По пути /metrics все собираемые метрики публикуются для
+сбора Prometheus:
+```
+# HELP cadvisor_version_info A metric with a constant '1' value labeled by kernel version, OS version, docker version, cadvisor version & cadvisor revision.
+# TYPE cadvisor_version_info gauge
+cadvisor_version_info{cadvisorRevision="aaaa65d",cadvisorVersion="v0.29.0",dockerVersion="19.03.5",kernelVersion="5.3.15-300.fc31.x86_64",osVersion="Alpine Linux v3.4"} 1
+# HELP container_cpu_load_average_10s Value of container cpu load average over the last 10 seconds.
+# TYPE container_cpu_load_average_10s gauge
+container_cpu_load_average_10s{container_label_com_docker_compose_config_hash="",container_label_com_docker_compose_container_number="",container_label_com_docker_compose_oneoff="",container_label_com_docker_compose_project="",container_label_com_docker_compose_service="",container_label_com_docker_compose_version="",container_label_maintainer="",id="/",image="",name=""} 0
+...
+```
+Видим, что имена метрик контейнеров начинаются со слова container
+
+### Проверим, что метрики контейнеров собираются Prometheus.
+Введем, слово container и посмотрим, что он предложит
+дополнить:
