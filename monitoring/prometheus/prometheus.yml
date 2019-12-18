@@ -6,17 +6,17 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets:
-        - 'localhost:9090'
+        - "localhost:9090"
 
   - job_name: 'ui'
     static_configs:
       - targets:
-        - 'ui:9292'
+        - "ui:9292"
 
   - job_name: 'comment'
     static_configs:
       - targets:
-        - 'comment:9292'
+        - "comment:9292"
 
   - job_name: 'node'
     static_configs:
@@ -31,4 +31,9 @@ scrape_configs:
   - job_name: 'cadvisor'
     static_configs:
       - targets:
-        - 'cadvisor:8080'
+        - "cadvisor:8080"
+
+  - job_name: 'post'
+    static_configs:
+      - targets:
+        - 'post:5000'
