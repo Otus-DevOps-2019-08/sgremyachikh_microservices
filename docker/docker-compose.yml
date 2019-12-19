@@ -1,0 +1,94 @@
+version: '3.3'
+services:
+  post_db:
+    image: mongo:${MONGO_VER:-3.2}
+    volumes:
+      - post_db:/data/db
+    networks:
+      back_net:
+        aliases:
+          - post_db
+          - comment_db
+
+  ui:
+    image: ${USERNAME:-decapapreta}/ui:${UI_VER:-1.0}
+    ports:
+    - protocol: tcp
+      published: ${UI_PORT:-9292}
+      target: 9292
+    networks:
+      front_net:
+        aliases:
+          - ui
+
+  post:
+    image: ${USERNAME:-decapapreta}/post:${POST_VER:-1.0}
+    networks:
+      back_net:
+        aliases:
+          - post
+      front_net:
+        aliases:
+          - post
+
+  comment:
+    image: ${USERNAME:-decapapreta}/comment:${COMMENT_VER:-1.0}
+    networks:
+      back_net:
+        aliases:
+          - comment
+      front_net:
+        aliases:
+          - comment
+
+  prometheus:
+    image: ${USERNAME}/prometheus
+    networks:
+      back_net:
+        aliases:
+          - prom
+      front_net:
+        aliases:
+          - prom
+    ports:
+      - '9090:9090'
+    volumes:
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention=1d'
+
+  node-exporter:
+    image: prom/node-exporter:v0.15.2
+    networks:
+      back_net:
+        aliases:
+          - node-exporter
+      front_net:
+        aliases:
+          - node-exporter
+    user: root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+
+  mongodb-exporter:
+    image: ${USERNAME:-decapapreta}/mongodb-exporter:${MONGODB_EXPORTER_VERSION:-v2019.12.14}
+    networks:
+      - back_net
+    environment:
+      MONGODB_URI: "mongodb://post_db:27017"
+
+volumes:
+  prometheus_data:
+  post_db:
+
+networks:
+  front_net:
+  back_net:
