@@ -1690,7 +1690,10 @@ Web UI
 
 Вообще все в облаке должно быть в коде.
 В sgremyachikh_microservices/terraform/bucket_creation/ - там создание бакета в проекте GCE. 
+<<<<<<< HEAD
 
+=======
+>>>>>>> af1b618a91fe56a609193a0cb968771e36140838
 В sgremyachikh_microservices/terraform/for_docker_homeworks/ - код проапгрейжен модулем firewall, создаст стейт инфраструктуры в бакете, созданные правила для 22, 9090, 9292 портов в облаке для провижена, ключи для ssh в GCE,. Так как все должнобыть *aaC.
 
 ### docker-machine:
