@@ -2793,12 +2793,126 @@ receivers:
 1. Соберем образ alertmanager:
 2. Добавим новый сервис в компоуз файл мониторинга. Не забудьте
 добавить его в одну сеть с сервисом Prometheus:
-monitoring/alertmanager $ docker build -t $USER_NAME/alertmanager .
+```
+monitoring/alertmanager $ docker build -t decapapreta/alertmanager . && docker push decapapreta/alertmanager
+```
+```
 services:
 ...
-alertmanager:
-image: ${USER_NAME}/alertmanager
-command:
-- '--config.file=/etc/alertmanager/config.yml'
-ports:
-- 9093:9093
+  alertmanager:
+    image: ${USERNAME}/alertmanager
+    networks: 
+      front_net:
+        aliases: 
+          - alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+    ports:
+      - "9093:9093"
+```
+### Alert rules
+Создадим файл alerts.yml в директории prometheus, в котором
+определим условия при которых должен срабатывать алерт и
+посылаться Alertmanager-у. Мы создадим простой алерт, который
+будет срабатывать в ситуации, когда одна из наблюдаемых систем
+(endpoint) недоступна для сбора метрик (в этом случае метрика up с
+лейблом instance равным имени данного эндпоинта будет равна
+нулю). Выполните запрос по имени метрики up в веб интерфейсе
+Prometheus, чтобы убедиться, что сейчас все эндпоинты доступны
+для сбора метрик
+
+Все инстансы отдают -1 , а соответственно доступны.
+
+Запилим:
+в monitoring/prometheus/alerts.yml 
+```
+groups:
+  - name: alert.rules
+    rules:
+    - alert: InstanceDown
+      expr: up == 0
+      for: 1m
+      labels:
+        severity: page
+      annotations:
+        description: '{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute'
+        summary: 'Instance {{ $labels.instance }} down'
+```
+Добавим операцию копирования данного файла в Dockerfile:
+```
+monitoring/prometheus/Dockerfile
+FROM prom/prometheus:v2.1.0
+ADD prometheus.yml /etc/prometheus/
+ADD alerts.yml /etc/prometheus/
+```
+#### Далее в prometheus.yml
+Добавим информацию о правилах, в конфиг Prometheus
+```
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+  - scheme: http
+    static_configs:
+    - targets:
+      - "alertmanager:9093"
+
+```
+пересобираем образ прома
+```
+docker build -t decapapreta/prometheus .
+docker push decapapreta/prometheus
+```
+### Проверка алерта
+Пересоздадим нашу Docker инфраструктуру мониторинга:
+```
+docker-compose -f docker-compose-monitoring.yml down
+docker-compose -f docker-compose-monitoring.yml up -d
+```
+Алерты можно посмотреть в веб интерфейсе Prometheus:
+
+
+InstanceDown (0 active)
+alert: InstanceDown
+expr: up == 0
+for: 1m
+labels:
+  severity: page
+annotations:
+  description: '{{ $labels.instance }} of job {{ $labels.job }} has been down for
+    more than 1 minute'
+  summary: Instance {{ $labels.instance }} down
+
+### Проверка алерта
+Остановим один из сервисов
+```
+docker-compose stop post
+```
+подождем одну минуту
+
+В канал должно придти сообщение:
+```
+prometheusAPP 12:36 AM
+[FIRING:1] InstanceDown (post:5000 post page)
+```
+У Alertmanager также есть свой веб интерфейс, доступный на
+порту 9093, который мы прописали в компоуз файле.
+P.S. Проверить работу вебхуков слака можно обычным curl, но не потребовалось.
+
+### Завершение работы
+Запушьте собранные вами образы на DockerHub:
+```
+$ docker login
+Login Succeeded
+$ docker push $USER_NAME/ui
+$ docker push $USER_NAME/comment
+$ docker push $USER_NAME/post
+$ docker push $USER_NAME/prometheus
+$ docker push $USER_NAME/alertmanager
+```
+https://hub.docker.com/u/decapapreta
+
+### Задания со *
+
+Задания со звездочками откладываю от нехватки времени к сожалению на потом.

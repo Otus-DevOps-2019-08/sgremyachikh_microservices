@@ -38,7 +38,7 @@ services:
   grafana:
     image: grafana/grafana:5.0.0
     networks:
-      back_net:
+      front_net:
         aliases:
           - grafana
     volumes:
@@ -50,6 +50,17 @@ services:
       - prometheus
     ports:
       - '3000:3000'
+
+  alertmanager:
+    image: ${USERNAME}/alertmanager
+    networks: 
+      front_net:
+        aliases: 
+          - alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+    ports:
+      - "9093:9093"
 
   node-exporter:
     image: prom/node-exporter:v0.15.2
