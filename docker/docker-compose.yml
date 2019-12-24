@@ -23,6 +23,9 @@ services:
 
   post:
     image: ${USERNAME:-decapapreta}/post:${POST_VER:-1.0}
+    environment:
+      - POST_DATABASE_HOST=post_db
+      - POST_DATABASE=posts
     networks:
       back_net:
         aliases:
@@ -30,6 +33,15 @@ services:
       front_net:
         aliases:
           - post
+    depends_on:
+      - post_db
+    ports:
+      - "5000:5000"
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.post
 
   comment:
     image: ${USERNAME:-decapapreta}/comment:${COMMENT_VER:-1.0}
