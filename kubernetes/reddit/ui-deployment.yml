@@ -15,5 +15,5 @@ spec:
         app: ui
     spec:
       containers:
-      - image: decapapreta/ui
+      - image: decapapreta/ui:1.0
         name: ui

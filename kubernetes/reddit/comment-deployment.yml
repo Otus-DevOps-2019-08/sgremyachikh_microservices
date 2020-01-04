@@ -15,5 +15,5 @@ spec:
         app: comment
     spec:
       containers:
-      - image: decapapreta/comment
+      - image: decapapreta/comment:1.0
         name: comment

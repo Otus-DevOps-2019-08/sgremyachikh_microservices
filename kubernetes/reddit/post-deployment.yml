@@ -15,5 +15,5 @@ spec:
         app: post
     spec:
       containers:
-      - image: decapapreta/post
+      - image: decapapreta/post:1.0
         name: post
