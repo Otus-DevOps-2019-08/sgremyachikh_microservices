@@ -3960,3 +3960,226 @@ t@log_name	service.ui
 docker-machine rm logging -f
 eval $(docker-machine env --unset)
 ```
+# HW 25. Введение в Kubernetes
+
+Цели
+
+- Разобрать на практике все компоненты Kubernetes, развернуть их
+вручную используя The Hard Way;
+- Ознакомиться с описанием основных примитивов нашего
+приложения и его дальнейшим запуском в Kubernetes.
+
+## Создание примитивов
+
+Опишем приложение в контексте Kubernetes с помощью
+manifest-ов в YAML-формате. Основным примитивом будет
+Deployment. Основные задачи сущности Deployment:
+
+- Создание Replication Controller-а (следит, чтобы число запущенных
+Pod-ов соответствовало описанному);
+- Ведение истории версий запущенных Pod-ов (для различных
+стратегий деплоя, для возможностей отката);
+- Описание процесса деплоя (стратегия, параметры стратегий).
+
+По ходу курса эти манифесты будут обновляться, а также
+появляться новые. Текущие файлы нужны для создания структуры
+и проверки работоспособности kubernetes-кластера.
+
+### Пример Deployment post-deployment.yml
+
+```
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: post-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: post
+  template:
+    metadata:
+      name: post
+      labels:
+        app: post
+    spec:
+      containers:
+      - image: chromko/post
+        name: post
+```
+
+### Задание
+
+Создайте директорию kubernetes в корне репозитория;
+Внутри директории kubernetes создайте директорию reddit;
+Сохраните файл post-deployment.yml в директории
+kubernetes/reddit;
+
+Создайте собственные файлы с Deployment манифестами
+приложений и сохраните в папке kubernetes/reddit:
+- ui-deployment.yml
+- comment-deployment.yml
+- mongo-deployment.yml
+P.S. Эту директорию и файлы в ней в дальнейшем мы будем
+развивать (пока это нерабочие экземпляры).
+
+## Kubernetes The Hard Way.
+
+В качестве домашнего задания предлагается пройти https://github.com/kelseyhightower/kubernetes-the-hard-way
+разработанный инженером Google Kelsey Hightower
+Туториал представляет собой:
+Пошаговое руководство по ручной инсталляции основных
+компонентов Kubernetes кластера;
+Краткое описание необходимых действий и объектов.
+
+### Задание
+
+- Создать отдельную директорию the_hard_way в директории
+kubernetes;
+- Пройти Kubernetes The Hard Way;
+- Проверить, что kubectl apply -f <filename> проходит по созданным
+до этого deployment-ам (ui, post, mongo, comment) и поды
+запускаются;
+- Удалить кластер после прохождения THW;
+- Все созданные в ходе прохождения THW файлы (кроме бинарных)
+поместить в папку kubernetes/the_hard_way репозитория
+(сертификаты и ключи тоже можно коммитить, но только после
+удаления кластера).
+
+### Возможные проблемы 
+
+Если на шаге Bootstrapping the etcd Cluster у вас не работает
+команда 
+```
+sudo systemctl start etcd
+```
+то, вероятно, Вы не используете параллельный ввод с помощью tmux, а выполняете
+команды для каждого сервера отдельно. Для того, чтобы команда
+выполнилась успешно, установите etcd на каждый необходимый
+инстанс и одновременно запустите её на всех инстансах.
+
+
+Если в процессе выполнения команд возникает ошибка
+```
+(gcloud.compute.addresses.describe) argument --region:
+expected one argument
+```
+то убедитесь, что Вы выполняете команду
+в нужном месте!
+Обычно это происходит, когда команду
+необходимо выполнять на локальной машине, а она выполняется
+на каком то из инстансов. Если команда точно выполняется
+локально, то выполните:
+```
+{
+gcloud config set compute/region us-west1
+gcloud config set compute/zone us-west1-c
+}
+```
+## Начну пилить кубер по Hard-way
+------------------------------------------------------------------------
+https://github.com/kelseyhightower/kubernetes-the-hard-way
+------------------------------------------------------------------------
+
+Весь Хард-вей засунул в отдельный [README.md](https://github.com/Otus-DevOps-2019-08/sgremyachikh_microservices/blob/kubernetes-1/kubernetes/the_hard_way/README.md)
+
+
+## Проверить, что kubectl apply -f <filename> проходит по созданным до этого deployment-ам (ui, post, mongo, comment) и поды запускаются
+
+```
+kubectl apply -f mongo-deployment.yml
+kubectl apply -f post-deployment.yml
+kubectl apply -f comment-deployment.yml
+kubectl apply -f ui-deployment.yml
+```
+проверяю состояние подов
+```
+kubectl get pods
+NAME                                 READY   STATUS             RESTARTS   AGE
+busybox                              1/1     Running            1          71m
+comment-deployment-6c495b4b6-lwfzc   0/1     ImagePullBackOff   0          5m21s
+mongo-deployment-86d49445c4-rv6vs    1/1     Running            0          5m51s
+nginx-554b9c67f9-jmlrh               1/1     Running            0          32m
+post-deployment-5b67b9755d-4njx9     0/1     ImagePullBackOff   0          5m29s
+ui-deployment-6ff946d48b-sfpdz       0/1     ImagePullBackOff   0          5m14s
+```
+Как видим - все грустно.
+
+Гуглим [ImagePullBackOff](https://managedkube.com/kubernetes/k8sbot/troubleshooting/imagepullbackoff/2019/02/23/imagepullbackoff.html)
+
+Надо понять - что не так:
+```
+kubectl describe pod comment-deployment-6c495b4b6-lwfzc
+Name:           comment-deployment-6c495b4b6-lwfzc
+Namespace:      default
+Priority:       0
+Node:           worker-2/10.240.0.22
+Start Time:     Sun, 05 Jan 2020 00:52:07 +0300
+Labels:         app=comment
+                pod-template-hash=6c495b4b6
+Annotations:    <none>
+Status:         Pending
+IP:             10.200.2.4
+IPs:            <none>
+Controlled By:  ReplicaSet/comment-deployment-6c495b4b6
+Containers:
+  comment:
+    Container ID:   
+    Image:          decapapreta/comment
+    Image ID:       
+    Port:           <none>
+    Host Port:      <none>
+    State:          Waiting
+      Reason:       ImagePullBackOff
+    Ready:          False
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from default-token-sjnz9 (ro)
+Conditions:
+  Type              Status
+  Initialized       True 
+  Ready             False 
+  ContainersReady   False 
+  PodScheduled      True 
+Volumes:
+  default-token-sjnz9:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  default-token-sjnz9
+    Optional:    false
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute for 300s
+                 node.kubernetes.io/unreachable:NoExecute for 300s
+Events:
+  Type     Reason     Age                   From               Message
+  ----     ------     ----                  ----               -------
+  Normal   Scheduled  7m5s                  default-scheduler  Successfully assigned default/comment-deployment-6c495b4b6-lwfzc to worker-2
+  Normal   Pulling    5m40s (x4 over 7m4s)  kubelet, worker-2  Pulling image "decapapreta/comment"
+  Warning  Failed     5m39s (x4 over 7m4s)  kubelet, worker-2  Failed to pull image "decapapreta/comment": rpc error: code = Unknown desc = failed to resolve image "docker.io/decapapreta/comment:latest": docker.io/decapapreta/comment:latest not found
+  Warning  Failed     5m39s (x4 over 7m4s)  kubelet, worker-2  Error: ErrImagePull
+  Normal   BackOff    5m2s (x7 over 7m3s)   kubelet, worker-2  Back-off pulling image "decapapreta/comment"
+  Warning  Failed     111s (x20 over 7m3s)  kubelet, worker-2  Error: ImagePullBackOff
+```
+фикшу ямлы и применяю деплойменты еще раз
+
+```
+kubectl apply -f post-deployment.yml
+kubectl apply -f comment-deployment.yml
+kubectl apply -f ui-deployment.yml
+```
+чек:
+```
+kubectl get pods
+NAME                                  READY   STATUS    RESTARTS   AGE
+busybox                               1/1     Running   1          80m
+comment-deployment-5865bc6dbf-ft8tz   1/1     Running   0          111s
+mongo-deployment-86d49445c4-rv6vs     1/1     Running   0          14m
+nginx-554b9c67f9-jmlrh                1/1     Running   0          41m
+post-deployment-79885fc5df-zn2zl      1/1     Running   0          13s
+ui-deployment-bb9f4ccb9-ndkdl         1/1     Running   0          66s
+
+```
+все хорошо
+
