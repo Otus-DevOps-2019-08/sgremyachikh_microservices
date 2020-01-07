@@ -4183,3 +4183,557 @@ ui-deployment-bb9f4ccb9-ndkdl         1/1     Running   0          66s
 ```
 все хорошо
 
+# HW 26. Kubernetes. Запуск кластера и приложения. Модель безопасности.
+
+План
+• Развернуть локальное окружение для работы с
+Kubernetes
+• Развернуть Kubernetes в GKE
+• Запустить reddit в Kubernetes
+
+## Разворачиваем Kubernetes локально
+
+Для дальнейшей работы нам нужно подготовить
+локальное окружение, которое будет состоять из:
+
+1) kubectl - фактически, главной утилиты для работы
+c Kubernetes API (все, что делает kubectl, можно
+сделать с помощью HTTP-запросов к API k8s)
+
+2) Директории ~/.kube - содержит служебную инфу
+для kubectl (конфиги, кеши, схемы API)
+
+3) minikube - утилиты для разворачивания локальной
+инсталляции Kubernetes. 
+
+### Kubectl
+
+Необходимо [установить kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/#install-kubectl-on-linux):
+
+Все способы установки доступны по https://kubernetes.io/docs/tasks/tools/install-kubectl/
+
+### Установка Minikube
+
+Для работы Minukube вам понадобится локальный
+гипервизор:
+1. Для OS X: или xhyve driver, или VirtualBox, или VMware
+Fusion.
+2. Для Linux: VirtualBox или KVM.
+3. Для Windows: VirtualBox или Hyper-V.
+
+Инструкция по установке Minikube для разных ОС:
+https://kubernetes.io/docs/tasks/tools/install-minikube/
+
+#### Fedora 31.
+
+```
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-1.6.2.rpm \
+ && sudo rpm -ivh minikube-1.6.2.rpm
+```
+Hypervisor Setup
+Verify that your system has virtualization support enabled:
+
+```
+egrep -q 'vmx|svm' /proc/cpuinfo && echo yes || echo no
+```
+
+If the above command outputs “no”:
+If you are running within a VM, your hypervisor does not allow nested virtualization. You will need to use the None (bare-metal) driver
+If you are running on a physical machine, ensure that your BIOS has hardware virtualization enabled
+
+#### VirtualBox
+
+Requirements
+VirtualBox 5.2 or higher
+
+Usage
+
+Start a cluster using the virtualbox driver:
+```
+minikube start --vm-driver=virtualbox
+
+😄  minikube v1.6.2 on Fedora 31
+✨  Selecting 'virtualbox' driver from user configuration (alternates: [none])
+💿  Downloading VM boot image ...
+    > minikube-v1.6.0.iso.sha256: 65 B / 65 B [--------------] 100.00% ? p/s 0s
+    > minikube-v1.6.0.iso: 150.93 MiB / 150.93 MiB [] 100.00% 10.52 MiB p/s 14s
+🔥  Creating virtualbox VM (CPUs=2, Memory=2000MB, Disk=20000MB) ...
+🐳  Preparing Kubernetes v1.17.0 on Docker '19.03.5' ...
+💾  Downloading kubeadm v1.17.0
+💾  Downloading kubelet v1.17.0
+🚜  Pulling images ...
+🚀  Launching Kubernetes ... 
+⌛  Waiting for cluster to come online ...
+🏄  Done! kubectl is now configured to use "minikube"
+
+```
+
+To make virtualbox the default driver:
+```
+minikube config set vm-driver virtualbox
+
+These changes will take effect upon a minikube delete and then a minikube start
+```
+Getting to know Kubernetes
+Once started, you can use any regular Kubernetes command to interact with your minikube cluster. For example, you can see the pod states by running:
+
+```
+kubectl get po -A
+
+NAMESPACE     NAME                               READY   STATUS    RESTARTS   AGE
+kube-system   coredns-6955765f44-vcgqg           1/1     Running   0          3m11s
+kube-system   coredns-6955765f44-xslxq           1/1     Running   0          3m11s
+kube-system   etcd-minikube                      1/1     Running   0          2m57s
+kube-system   kube-addon-manager-minikube        1/1     Running   0          2m57s
+kube-system   kube-apiserver-minikube            1/1     Running   0          2m57s
+kube-system   kube-controller-manager-minikube   1/1     Running   0          2m57s
+kube-system   kube-proxy-sfjln                   1/1     Running   0          3m11s
+kube-system   kube-scheduler-minikube            1/1     Running   0          2m57s
+kube-system   storage-provisioner                1/1     Running   0          3m9s
+
+```
+
+Increasing memory allocation
+
+minikube only allocates 2GB of RAM by default, which is only enough for trivial deployments. For larger deployments, increase the memory allocation using the --memory flag, or make the setting persistent using:
+```
+sgremyachikh@Thinkpad  ~/Загрузки  minikube config set memory 4096
+
+⚠️  These changes will take effect upon a minikube delete and then a minikube start
+ sgremyachikh@Thinkpad  ~/Загрузки  minikube delete
+🔥  Deleting "minikube" in virtualbox ...
+💔  The "minikube" cluster has been deleted.
+🔥  Successfully deleted profile "minikube"
+
+sgremyachikh@Thinkpad  ~/Загрузки  minikube start                 
+
+😄  minikube v1.6.2 on Fedora 31
+✨  Selecting 'virtualbox' driver from user configuration (alternates: [none])
+🔥  Creating virtualbox VM (CPUs=2, Memory=4096MB, Disk=20000MB) ...
+🐳  Preparing Kubernetes v1.17.0 on Docker '19.03.5' ...
+🚜  Pulling images ...
+🚀  Launching Kubernetes ... 
+⌛  Waiting for cluster to come online ...
+🏄  Done! kubectl is now configured to use "minikube"
+
+```
+Where to go next?
+Visit the [examples](https://minikube.sigs.k8s.io/docs/examples) page to get an idea of what you can do with minikube.
+
+### возврат к методичке.
+
+Понимаю, что чуть опередил запустил миникуб.
+
+Но есть пара нюансов при выполнении
+```
+minikube start
+```
+P.S. Если нужна конкретная версия kubernetes, указывайте флаг
+--kubernetes-version <version> (v1.8.0)
+P.P.S.По-умолчанию используется VirtualBox. Если у вас другой гипервизор, то ставьте флаг
+--vm-driver=<hypervisor> 
+
+Наш Minikube-кластер развернут. При этом автоматически был
+настроен конфиг kubectl.
+Проверим, что это так: 
+
+```
+sgremyachikh@Thinkpad  ~/Загрузки  kubectl get nodes
+
+NAME       STATUS   ROLES    AGE     VERSION
+minikube   Ready    master   8m32s   v1.17.0
+```
+### Конфигурация kubectl - это контекст.
+
+Контекст - это комбинация:
+1) cluster - API-сервер
+2) user - пользователь для подключения к кластеру
+3) namespace - область видимости (не обязательно, поумолчанию default)
+Информацию о контекстах kubectl сохраняет в файле
+~/.kube/config
+
+Файл ~/.kube/config - это такой же манифест
+kubernetes в YAML-формате (есть и Kind, и ApiVersion). 
+
+```
+cat ~/.kube/config 
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURvRENDQW9p......(обрезал)
+    server: https://34.82.11.99:6443
+  name: kubernetes-the-hard-way
+- cluster:
+    certificate-authority: /home/sgremyachikh/.minikube/ca.crt
+    server: https://192.168.99.101:8443
+  name: minikube
+contexts:
+- context:
+    cluster: kubernetes-the-hard-way
+    user: admin
+  name: kubernetes-the-hard-way
+- context:
+    cluster: minikube
+    user: minikube
+  name: minikube
+current-context: minikube
+kind: Config
+preferences: {}
+users:
+- name: admin
+  user:
+    client-certificate: /home/sgremyachikh/work/yandex.d/OTUS/sgremyachikh_microservices/kubernetes/the_hard_way/admin.pem
+    client-key: /home/sgremyachikh/work/yandex.d/OTUS/sgremyachikh_microservices/kubernetes/the_hard_way/admin-key.pem
+- name: minikube
+  user:
+    client-certificate: /home/sgremyachikh/.minikube/client.crt
+    client-key: /home/sgremyachikh/.minikube/client.key
+```
+
+#### Кластер (cluster) - это:
+
+1) server - адрес kubernetes API-сервера
+2) certificate-authority - корневой сертификат (которым
+подписан SSL-сертификат самого сервера), чтобы
+убедиться, что нас не обманывают и перед нами тот
+самый сервер
++ name (Имя) для идентификации в конфиге
+
+```
+- cluster:
+    certificate-authority: /home/sgremyachikh/.minikube/ca.crt
+    server: https://192.168.99.101:8443
+  name: minikube
+```
+
+#### Пользователь (user) - это:
+
+1) Данные для аутентификации (зависит от того, как настроен
+сервер). Это могут быть:
+• username + password (Basic Auth
+• client key + client certificate
+• token
+• auth-provider config (например GCP)
++ name (Имя) для идентификации в конфиге
+
+
+client key + client certificate + name
+```
+- name: minikube
+  user:
+    client-certificate: /home/sgremyachikh/.minikube/client.crt
+    client-key: /home/sgremyachikh/.minikube/client.key
+```
+
+#### Контекст (контекст) - это:
+
+1) cluster - имя кластера из списка clusters
+2) user - имя пользователя из списка users
+3) namespace - область видимости по-умолчанию (не
+обязательно)
++ name (Имя) для идентификации в конфиге
+
+```
+- context:
+    cluster: minikube
+    user: minikube
+  name: minikube
+```
+
+### Обычно порядок конфигурирования kubectl следующий:
+
+1) Создать cluster:
+```
+$ kubectl config set-cluster … cluster_name
+```
+2) Создать данные пользователя (credentials)
+```
+$ kubectl config set-credentials … user_name
+```
+3) Создать контекст
+```
+$ kubectl config set-context context_name \
+--cluster=cluster_name \
+--user=user_name
+```
+4) Использовать контекст
+```
+$ kubectl config use-context context_name
+```
+
+Таким образом kubectl конфигурируется для подключения к
+разным кластерам, под разными пользователями.
+Текущий контекст можно увидеть так:
+```
+kubectl config current-context
+minikube
+```
+Список всех контекстов можно увидеть так: 
+```
+kubectl config get-contexts
+
+CURRENT   NAME                      CLUSTER                   AUTHINFO   NAMESPACE
+          kubernetes-the-hard-way   kubernetes-the-hard-way   admin      
+*         minikube                  minikube                  minikube   
+
+```
+
+### Запустим приложение
+
+Для работы в приложения kubernetes, нам необходимо
+описать их желаемое состояние либо в YAML-манифестах,
+либо с помощью командной строки.
+Всю конфигурацию поместите в каталог ./kubernetes/reddit
+внутри вашего репозитория.
+
+#### Deployment
+
+Основные объекты - это ресурсы Deployment.
+Как помним из предыдущего занятия, основные его задачи:
+
+• Создание ReplicationSet (следит, чтобы число запущенных
+Pod-ов соответствовало описанному)
+• Ведение истории версий запущенных Pod-ов (для
+различных стратегий деплоя, для возможностей отката)
+• Описание процесса деплоя (стратегия, параметры
+стратегий)
+
+#### ui-deployment.yml
+
+```
+---
+apiVersion: apps/v1beta2
+kind: Deployment 
+metadata: --------------------Блок метаданных деплоя
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec: ------------------------Блок спецификации деплоя
+  replicas: 3
+  selector: --------------!!!selector описывает, как ему отслеживать POD-ы. В данном случае - контроллер будет считать POD-ы с метками: app=reddit И component=ui
+    matchLabels:
+      app: reddit
+      component: ui
+  template: ------------------Блок описания POD-ов
+    metadata:
+      name: ui-pod
+      labels: ------------!!! Поэтому важно в описании POD-а задать нужные метки (labels) 
+        app: reddit-------!!! P.S. Для более гибкой выборки вводим 2 метки (app и component).
+        component: ui
+    spec:
+      containers:
+      - image: decapapreta/ui:1.0
+        name: ui
+
+```
+
+#### Запустим в Minikube ui-компоненту.
+```
+kubectl apply -f ui-deployment.yml 
+error: unable to recognize "ui-deployment.yml": no matches for kind "Deployment" in version "apps/v1beta2"
+```
+А все почему? А по тому что в методичке кривой версии апи написан и по тому нельзя тупо копипастить!
+Исправляем api:
+```
+---
+apiVersion: apps/v1
+kind: Deployment
+...
+```
+и еще раз:
+```
+kubectl apply -f ui-deployment.yml
+deployment.apps/ui created
+```
+Убедитесь, что во 2,3,4 и 5 столбцах стоит число 3 (число реплик ui):
+```
+kubectl get deployment
+
+NAME   READY   UP-TO-DATE   AVAILABLE   AGE
+ui     3/3     3            3           57m
+```
+
+P.S. kubectl apply -f <filename> может принимать не только
+отдельный файл, но и папку с ними. Например:
+```
+sgremyachikh@Thinkpad  ~/work/yandex.d/OTUS/sgremyachikh_microservices/kubernetes/reddit   kubernetes-2 ●  kubectl apply -f ./
+
+deployment.apps/comment created
+deployment.apps/mongo created
+deployment.apps/post created
+deployment.apps/ui unchanged
+```
+
+#### UI
+
+Пока что мы не можем использовать наше приложение полностью,
+потому что никак не настроена сеть для общения с ним.
+Но kubectl умеет пробрасывать сетевые порты POD-ов на локальную
+машину
+Найдем, используя selector, POD-ы приложения :
+```
+kubectl get pods --selector component=ui
+
+NAME                 READY   STATUS    RESTARTS   AGE
+ui-55b8d6654-nrs67   1/1     Running   0          71m
+ui-55b8d6654-qjzh9   1/1     Running   0          71m
+ui-55b8d6654-xd4mz   1/1     Running   0          71m
+
+kubectl port-forward ui-55b8d6654-nrs67 8080:9292
+Forwarding from 127.0.0.1:8080 -> 9292
+Forwarding from [::1]:8080 -> 9292
+```
+Зайдем в браузере на
+http://localhost:8080
+
+UI работает, подключим остальные компоненты
+
+```
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comment
+  labels:
+    app: reddit
+    component: comment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reddit
+      component: comment
+  template:
+    metadata:
+      name: comment-pod
+      labels:
+        app: reddit
+        component: comment
+    spec:
+      containers:
+      - image: decapapreta/comment:1.0
+        name: comment
+```
+```
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post
+  labels:
+    app: reddit
+    component: post
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reddit
+      component: post
+  template:
+    metadata:
+      name: post-pod
+      labels:
+        app: reddit
+        component: post
+    spec:
+      containers:
+      - image: decapapreta/post:1.0
+        name: post
+```
+Монга. Также примонтируем стандартный Volume для
+хранения данных вне контейнера:
+
+```
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+      name: mongo-pod
+      labels:
+        app: reddit
+        component: mongo
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts: -------------------------указываем волиумы контейнера
+          - name: mongo-persistent-storage
+            mountPath: /data/db -----------------------------Точка монтирования в контейнере (не в POD-е)
+      volumes: --------------------------------указываем волиумы
+        - name: mongo-persistent-storage ------------------------------ Ассоциированные с POD-ом Volume-ы
+          emptyDir: {}
+```
+
+Проверка подов:
+
+```
+sgremyachikh@Thinkpad  ~/work/yandex.d/OTUS/sgremyachikh_microservices/kubernetes/reddit   kubernetes-2 ●  kubectl get pods
+
+NAME                       READY   STATUS    RESTARTS   AGE
+comment-7d859ddc94-cmkck   1/1     Running   0          25m
+comment-7d859ddc94-frtqm   1/1     Running   0          25m
+comment-7d859ddc94-qcz8l   1/1     Running   0          25m
+mongo-7d5db556f9-4wdrd     1/1     Running   0          24s
+mongo-7d5db556f9-knfdh     1/1     Running   0          22s
+mongo-7d5db556f9-xwt5s     1/1     Running   0          20s
+post-5d86c4f986-5vwmg      1/1     Running   0          25m
+post-5d86c4f986-nt8rt      1/1     Running   0          25m
+post-5d86c4f986-s6hl7      1/1     Running   0          25m
+ui-55b8d6654-nrs67         1/1     Running   0          90m
+ui-55b8d6654-qjzh9         1/1     Running   0          90m
+ui-55b8d6654-xd4mz         1/1     Running   0          90m
+
+```
+
+#### Service
+
+В текущем состоянии приложение не будет
+работать, так его компоненты ещё не знают как
+найти друг друга
+Для связи компонент между собой и с внешним
+миром используется объект Service - абстракция,
+которая определяет набор POD-ов (Endpoints) и
+способ доступа к ним
+
+Для связи ui с post и comment нужно создать им по
+объекту Service. 
+
+```
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comment
+  labels:
+    app: reddit
+    component: comment
+spec:
+  ports:
+  - port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: comment
+```
+
+Когда объект service будет создан:
+1) В DNS появится запись для comment
+2) При обращении на адрес post:9292
+изнутри любого из POD-ов текущего
+namespace нас переправит на 9292-ный
+порт одного из POD-ов приложения post,
+выбранных по label-ам
