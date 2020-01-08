@@ -22,3 +22,8 @@ spec:
       containers:
       - image: decapapreta/ui:1.0
         name: ui
+        env:
+        - name: ENV
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
