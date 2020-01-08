@@ -23,5 +23,5 @@ spec:
       - image: decapapreta/comment:1.0
         name: comment
         env:
-          - name:  COMMENT_DATABASE_HOST
+          - name: COMMENT_DATABASE_HOST
             value: comment-db
