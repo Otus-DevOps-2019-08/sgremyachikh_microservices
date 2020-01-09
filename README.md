@@ -5489,9 +5489,43 @@ NodePort:                 <unset>  32092/TCP
 Kubernetes Dashboard
 The Kubernetes Dashboard add-on is disabled by default on GKE.
 
-***Starting with GKE v1.15, you will no longer be able to enable the Kubernetes Dashboard by using the add-on API. You will still be able to install Kubernetes Dashboard manually by following the instructions in the project's repository. For clusters in which you have already deployed the add-on, it will continue to function but you will need to manually apply any updates and security patches that are released.***
+***Starting with GKE v1.15, you will no longer be able to enable the Kubernetes Dashboard by using the add-on API. You will still be able to install Kubernetes Dashboard manually by following the instructions in the project's [repository](https://github.com/kubernetes/dashboard). For clusters in which you have already deployed the add-on, it will continue to function but you will need to manually apply any updates and security patches that are released.***
 
 У меня как раз такой создан GKE v1.15
+
+#### Kubernetes Dashboard is a general purpose, web-based UI for Kubernetes clusters. It allows users to manage applications running in the cluster and troubleshoot them, as well as manage the cluster itself.
+
+IMPORTANT: Read the [Access Control](https://github.com/kubernetes/dashboard/blob/master/docs/user/access-control/README.md) guide before performing any further steps. The default Dashboard deployment contains a minimal set of RBAC privileges needed to run.
+
+##### To deploy Dashboard, execute following command:
+
+```
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-rc1/aio/deploy/recommended.yaml
+```
+To access Dashboard from your local workstation you must create a secure channel to your Kubernetes cluster. Run the following command:
+
+```
+http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
+```
+
+##### Create An Authentication Token (RBAC)
+
+To find out how to create sample user and log in follow [Creating sample](https://github.com/kubernetes/dashboard/blob/master/docs/user/access-control/creating-sample-user.md) user guide.
+
+##### NOTE:
+
+Kubeconfig Authentication method does not support external identity providers or certificate-based authentication.
+Dashboard can only be accessed over HTTPS
+[Heapster](https://github.com/kubernetes/heapster/) has to be running in the cluster for the metrics and graphs to be available. Read more about it in [Integrations](https://github.com/kubernetes/dashboard/blob/master/docs/user/integrations.md) guide.
+
+##### Documentation
+
+Dashboard documentation can be found on [docs](https://github.com/kubernetes/dashboard/blob/master/docs/README.md):
+- Common: Entry-level overview
+- User Guide: Installation, Accessing Dashboard and more for users
+- Developer Guide: Getting Started, Dependency Management and more for anyone interested in contributing
+
+
 
 ## Задание * 
 - Разверните Kubenetes-кластер в GKE с помощью Terraform модуля
