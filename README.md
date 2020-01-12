@@ -5534,3 +5534,7 @@ Dashboard documentation can be found on [docs](https://github.com/kubernetes/das
 - Приложите конфигурацию к PR
 
 пока отложено чтоб успеть сдать все до кусовой работы, но в любом случае вопрос требует изучения
+
+
+# HW 27 Ingress-контроллеры и сервисы в Kubernetes. Kubernetes. Networks ,Storages
+
