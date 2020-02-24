@@ -32,4 +32,5 @@ spec:
       volumes:
       - name: mongo-gce-pd-storage
         persistentVolumeClaim:
+# Обновим PersistentVolumeClaim
           claimName: mongo-pvc-dynamic

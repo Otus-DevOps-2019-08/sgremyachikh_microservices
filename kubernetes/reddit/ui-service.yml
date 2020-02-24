@@ -8,11 +8,8 @@ metadata:
     component: ui
 spec:
   type: NodePort
-#  type: LoadBalancer
   ports:
-#    - nodePort: 32092
     - port: 9292
-#    - port: 80
       protocol: TCP
       targetPort: 9292
   selector:
