@@ -1,0 +1,13 @@
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+# Имя PersistentVolumeClame'а
+  name: mongo-pvc
+spec:
+# accessMode у PVC и у PV должен совпадать
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 15Gi

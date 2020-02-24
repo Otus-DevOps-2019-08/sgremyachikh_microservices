@@ -11,4 +11,3 @@ spec:
     backend:
         serviceName: ui
         servicePort: 9292
-

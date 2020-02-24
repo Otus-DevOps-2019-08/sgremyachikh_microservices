@@ -33,8 +33,8 @@ module "gke" {
   subnetwork             = var.subnetwork
   ip_range_pods          = var.ip_range_pods
   ip_range_services      = var.ip_range_services
-  zones                  = ["europe-west1-b"]
-#  http_load_balancing    = true
+  zones                  = [var.zones]
+  http_load_balancing    = true
 #  create_service_account = false
 #  service_account        = var.compute_engine_service_account
   skip_provisioners      = var.skip_provisioners
@@ -47,22 +47,22 @@ module "gke" {
       autoscaling        = true
       auto_repair        = true
       auto_upgrade       = true
-      min_count          = 1
+      min_count          = 2
       max_count          = 3
-      initial_node_count = 1
+      initial_node_count = 2
     },
-    {
-      name               = "elastic-node-pool"
-      machine_type       = "n1-standard-2"
-      autoscaling        = true
-      auto_repair        = true
-      auto_upgrade       = true
-      min_count          = 1
-      max_count          = 2
-      disk_size_gb       = 20
-      preemptible        = false
-      initial_node_count = 1
-    }
+#    {
+#      name               = "elastic-node-pool"
+#      machine_type       = "n1-standard-2"
+#      autoscaling        = true
+#      auto_repair        = true
+#      auto_upgrade       = true
+#      min_count          = 1
+#      max_count          = 2
+#      disk_size_gb       = 20
+#      preemptible        = false
+#      initial_node_count = 1
+#    }
   ]
 
   node_pools_labels = {

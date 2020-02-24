@@ -5544,71 +5544,6 @@ Dashboard documentation can be found on [docs](https://github.com/kubernetes/das
 
 Основа: https://github.com/terraform-google-modules/terraform-google-kubernetes-engine
 
-prerequesits: 
-```
-sudo yum search jq
-```
-```
-cd ./kubernetes/k8s-gcp-terraform/
-terraform apply
-```
-Кстати по locals [habr]](https://habr.com/ru/company/dins/blog/470543/) или [docs](https://www.terraform.io/docs/configuration/locals.html)
-
-
-main.tf
-```
-terraform {
-  # Версия terraform
-  required_version = "~>0.12.0"
-}
-
-# 
-locals {
-  cluster_type = "simple-regional"
-}
-
-# version was uped to 3.3.0 for module "gke"
-provider "google" {
-  # Версия провайдера
-  version = "~> 3.3.0"
-  # ID проекта
-  project = var.project
-  # регион развертывания
-  region = var.region
-}
-
-#taken from https://github.com/terraform-google-modules/terraform-google-kubernetes-engine
-module "gke" {
-  source                 = "terraform-google-modules/kubernetes-engine/google"
-  project_id             = var.project
-  name                   = "${local.cluster_type}-cluster${var.cluster_name_suffix}"
-  regional               = true
-  region                 = var.region
-  network                = var.network
-  subnetwork             = var.subnetwork
-  ip_range_pods          = var.ip_range_pods
-  ip_range_services      = var.ip_range_services
-  create_service_account = false
-  service_account        = var.compute_engine_service_account
-  skip_provisioners      = var.skip_provisioners
-}
-# also from https://github.com/terraform-google-modules/terraform-google-kubernetes-engine
-data "google_client_config" "default" {
-}
-
-# модуль для доступа ко всем ВМ по 22 порту ssh
-module "vpc" {
-  source        = "./modules/vpc"
-  source_ranges = var.source_ranges
-  environment   = var.environment
-} 
-
-# Добавляю глобальную метадату в виде ключей своего юзера
-resource "google_compute_project_metadata_item" "ssh-keys" {
-  key   = "ssh-keys"
-  value = "sgremyachikh:${file(var.public_key_path)}"
-}
-```
 Все работет, приложения задеплоил
 
 ## План
@@ -6245,9 +6180,52 @@ https://kubernetes.io/docs/concepts/services-networking/ingress/#types-of-ingres
 https://cloud.croc.ru/blog/byt-v-teme/kubernetes-ustanovka-tls-ssl-sertifikatov/
 https://serveradmin.ru/kubernetes-ingress/#SSLTLS__Ingress
 https://stackoverflow.com/questions/49614439/kubernetes-secret-types
+Подсказали добрые люди:
+https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/apis/core/types.go#L4530
 
-убил вечер, отложил. очень интересно, но времени жалко.
+```
+// SecretTypeTLS contains information about a TLS client or server secret. It
+// is primarily used with TLS termination of the Ingress resource, but may be
+// used in other types.
+//
+// Required fields:
+// - Secret.Data["tls.key"] - TLS private key.
+//   Secret.Data["tls.crt"] - TLS certificate.
+// TODO: Consider supporting different formats, specifying CA/destinationCA.
 
+SecretTypeTLS SecretType = "kubernetes.io/tls"
+// TLSCertKey is the key for tls certificates in a TLS secret.
+TLSCertKey = "tls.crt"
+// TLSPrivateKeyKey is the key for the private key field in a TLS secret.
+TLSPrivateKeyKey = "tls.key"
+```
+
+файл ui-secret.yml типа такого нифига не работает:
+```yml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ui-ingress
+type: kubernetes.io/tls
+data:
+  tls.crt: base64-encoded-content-of_tls.crt
+  tls.key: base64-encoded-content-of_tls.key
+```
+файл ui-secret.yml типа такого тоже нифига не работает:
+```yml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ui-ingress
+type: kubernetes.io/tls
+data:
+  tls.crt: содержимо этого файла
+  tls.key: содержимо этого файла
+```
+
+так что отложу на потом
 -------------------------------------------------------
 
 ## Network Policy
@@ -6274,18 +6252,525 @@ mongodb отовсюду, кроме сервисов post и comment.
 
 ### Найдите имя кластера
 
-```
+```bash
 gcloud beta container clusters list
-NAME                                 LOCATION     MASTER_VERSION  MASTER_IP        MACHINE_TYPE   NODE_VERSION  NUM_NODES  STATUS
-simple-regional-clusterkubernetes-3  us-central1  1.15.7-gke.2    130.211.217.190  n1-standard-1  1.15.7-gke.2  3          RUNNING
+NAME                                  LOCATION        MASTER_VERSION  MASTER_IP      MACHINE_TYPE   NODE_VERSION  NUM_NODES  STATUS
+simple-autoscale-clusterkubernetes-3  europe-west1-b  1.15.9-gke.9    35.233.111.53  n1-standard-1  1.15.9-gke.9  3          RUNNING
+
 ```
 Включим network-policy для GKE
 
-```
-gcloud beta container clusters update simple-regional-clusterkubernetes-3 --zone=us-central1 --update-addons=NetworkPolicy=ENABLED 
-gcloud beta container clusters update simple-regional-clusterkubernetes-3 --zone=us-central1  --enable-network-policy 
+```bash
+gcloud beta container clusters update simple-autoscale-clusterkubernetes-3 --zone=europe-west1-b --update-addons=NetworkPolicy=ENABLED
+
+Updating simple-autoscale-clusterkubernetes-3...done.                                                                                                                                        
+Updated [https://container.googleapis.com/v1beta1/projects/diploma-266217/zones/europe-west1-b/clusters/simple-autoscale-clusterkubernetes-3].
+To inspect the contents of your cluster, go to: https://console.cloud.google.com/kubernetes/workload_/gcloud/europe-west1-b/simple-autoscale-clusterkubernetes-3?project=diploma-266217
+
+gcloud beta container clusters update simple-autoscale-clusterkubernetes-3 --zone=europe-west1-b --enable-network-policy
+
+Enabling/Disabling Network Policy causes a rolling update of all 
+cluster nodes, similar to performing a cluster upgrade.  This 
+operation is long-running and will block other operations on the 
+cluster (including delete) until it has run to completion.
+
+Do you want to continue (Y/n)?  y
+
+Updating simple-autoscale-clusterkubernetes-3...done.                                                                                                                                        
+Updated [https://container.googleapis.com/v1beta1/projects/diploma-266217/zones/europe-west1-b/clusters/simple-autoscale-clusterkubernetes-3].
+To inspect the contents of your cluster, go to: https://console.cloud.google.com/kubernetes/workload_/gcloud/europe-west1-b/simple-autoscale-clusterkubernetes-3?project=diploma-266217
+
 ```
 Дождитесь, пока кластер обновится
 Вам может быть предложено добавить beta-функционал в gcloud -
 нажмите yes. 
+
+### mongo-network-policy.yml 
+
+```yml
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  labels:
+    app: reddit
+spec:
+# Выбираем объекты:
+# - Выбираем объекты политики (pod’ы с mongodb)
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+# Блок запрещающих направлений:
+# - Запрещаем все входящие подключения
+# - Исходящие разрешены
+  policyTypes:
+  - Ingress
+# Блок разрешающих правил:
+# - Разрешаем все входящие подключения от
+# - POD-ов с label-ами comment.
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: comment
+```
+### Применяем политику
+```
+kubectl apply -f mongo-network-policy.yml
+```
+Заходим в приложение
+Post-сервис не может достучаться до базы.
+
+```yml
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  labels:
+    app: reddit
+spec:
+# Выбираем объекты:
+# - Выбираем объекты политики (pod’ы с mongodb)
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+# Блок запрещающих направлений:
+# - Запрещаем все входящие подключения
+# - Исходящие разрешены
+  policyTypes:
+  - Ingress
+# Блок разрешающих правил:
+# - Разрешаем все входящие подключения от
+# - POD-ов с label-ами comment.
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: comment
+# - Разрешаем все входящие подключения от
+# - POD-ов с label-ами post.
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: post
+
+```
+## Хранилище для базы
+
+Рассмотрим вопросы хранения данных. Основной
+Stateful сервис в нашем приложении - это база данных
+MongoDB.
+В текущий момент она запускается в виде Deployment и
+хранит данные в стаднартный Docker Volume-ах. Это
+имеет несколько проблем:
+- при удалении POD-а удаляется и Volume
+- потеря Nod’ы с mongo грозит потерей данных
+- запуск базы на другой ноде запускает новый
+экземпляр данных
+
+mongo-deployment.yml
+```yml
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+    post-db: "true"
+    comment-db: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+      name: mongo
+      labels:
+        app: reddit
+        component: mongo
+        post-db: "true"
+        comment-db: "true"
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+# Подключаем Volume
+        volumeMounts:
+        - name: mongo-persistent-storage
+          mountPath: /data/db
+# Объявляем Volume
+      volumes:
+      - name: mongo-persistent-storage
+        emptyDir: {}
+```
+
+Сейчас используется тип Volume emptyDir. При создании пода с
+таким типом просто создается пустой docker volume.
+При остановке POD’a содержимое emtpyDir удалится навсегда. Хотя
+в общем случае падение POD’a не вызывает удаления Volume’a.
+Задание:
+1) создайте пост в приложении
+2) удалите deployment для mongo
+3) Создайте его заново 
+
+сделал
+посты все удалились
+
+Вместо того, чтобы хранить данные локально на ноде, имеет смысл
+подключить удаленное хранилище. В нашем случае можем
+использовать Volume gcePersistentDisk, который будет складывать
+данные в хранилище GCE.
+
+### Создадим диск в Google Cloud:
+```bash
+gcloud compute disks create --size=25GB --zone=europe-west1-b reddit-mongo-disk
+
+WARNING: You have selected a disk size of under [200GB]. This may result in poor I/O performance. For more information, see: https://developers.google.com/compute/docs/disks#performance.
+Created [https://www.googleapis.com/compute/v1/projects/diploma-266217/zones/europe-west1-b/disks/reddit-mongo-disk].
+
+NAME               ZONE            SIZE_GB  TYPE         STATUS
+reddit-mongo-disk  europe-west1-b  25       pd-standard  READY
+
+New disks are unformatted. You must format and mount a disk before it
+can be used. You can find instructions on how to do this at:
+
+https://cloud.google.com/compute/docs/disks/add-persistent-disk#formatting
+
+```
+### Добавим новый Volume POD-у базы. 
+
+Монтируем выделенный диск к POD’у mongo
+
+```yml
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+    post-db: "true"
+    comment-db: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+      name: mongo
+      labels:
+        app: reddit
+        component: mongo
+        post-db: "true"
+        comment-db: "true"
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts:
+        - name: mongo-gce-pd-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-persistent-storage
+        emptyDir: {}
+        volumes:
+      - name: mongo-gce-pd-storage
+        gcePersistentDisk:
+          pdName: reddit-mongo-disk
+          fsType: ext4
+
+```
+Зайдем в приложение и добавим пост
+Удалим deployment 
+Снова создадим деплой mongo. 
+
+Наш пост все еще на месте
+
+[можно посмотреть на созданный диск и увидеть какой
+машиной он используется](https://console.cloud.google.com/compute/disks)
+
+## PersistentVolume
+
+Используемый механизм Volume-ов можно сделать удобнее.
+Мы можем использовать не целый выделенный диск для
+каждого пода, а целый ресурс хранилища, общий для всего
+кластера.
+Тогда при запуске Stateful-задач в кластере, мы сможем
+запросить хранилище в виде такого же ресурса, как CPU или
+оперативная память. 
+
+Для этого будем использовать механизм PersistentVolume.
+
+Создадим описание PersistentVolume 
+
+```yml
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: reddit-mongo-disk
+spec:
+  capacity:
+    storage: 25Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  gcePersistentDisk:
+    fsType: "ext4" 
+    pdName: "reddit-mongo-disk"
+```
+
+```bash
+kubectl apply -f mongo-volume.yml
+persistentvolume/reddit-mongo-disk created
+```
+Мы создали PersistentVolume в виде диска в GCP
+
+### PersistentVolumeClaim
+
+Мы создали ресурс дискового хранилища, распространенный
+на весь кластер, в виде PersistentVolume. 
+
+Чтобы выделить приложению часть такого ресурса - нужно
+создать запрос на выдачу - PersistentVolumeClaim.
+Claim - это именно запрос, а не само хранилище.
+
+С помощью запроса можно выделить место как из
+конкретного PersistentVolume (тогда параметры accessModes
+и StorageClass должны соответствовать, а места должно
+хватать), так и просто создать отдельный PersistentVolume под
+конкретный запрос.
+
+### Создадим описание PersistentVolumeClaim (PVC) 
+
+```yml
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+# Имя PersistentVolumeClame'а
+  name: mongo-pvc
+spec:
+# accessMode у PVC и у PV должен совпадать
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 15Gi
+
+```
+Добавим PersistentVolumeClaim в кластер
+```
+$ kubectl apply -f mongo-claim.yml
+```
+
+Мы выделили место в PV по запросу для нашей базы.
+Одновременно использовать один PV можно только по
+одному Claim’у
+
+***Если Claim не найдет по заданным параметрам PV внутри кластера, либо тот будет занят другим Claim’ом то он сам создаст нужный ему PV воспользовавшись стандартным StorageClass.***
+
+```bash
+kubectl describe storageclass standard
+Name:                  standard
+IsDefaultClass:        Yes
+Annotations:           storageclass.kubernetes.io/is-default-class=true
+Provisioner:           kubernetes.io/gce-pd
+Parameters:            type=pd-standard
+AllowVolumeExpansion:  True
+MountOptions:          <none>
+ReclaimPolicy:         Delete
+VolumeBindingMode:     Immediate
+Events:                <none>
+```
+В нашем случае это обычный медленный Google Cloud
+Persistent Drive
+
+### Подключение PVC
+
+mongo-deployment.yml
+```yml
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+    post-db: "true"
+    comment-db: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+      name: mongo
+      labels:
+        app: reddit
+        component: mongo
+        post-db: "true"
+        comment-db: "true"
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts:
+        - name: mongo-gce-pd-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-gce-pd-storage
+        persistentVolumeClaim:
+          claimName: mongo-pvc
+```
+Обновим описание нашего Deployment’а
+$ kubectl apply -f mongo-deployment.yml
+
+Монтируем выделенное по PVC хранилище к POD’у
+mongo
+
+## Динамическое выделение Volume'ов
+
+Создав PersistentVolume мы отделили объект "хранилища" от
+наших Service'ов и Pod'ов. Теперь мы можем его при
+необходимости переиспользовать. 
+
+Но нам гораздо интереснее создавать хранилища при
+необходимости и в автоматическом режиме. В этом нам
+помогут StorageClass’ы. Они описывают где (какой
+провайдер) и какие хранилища создаются. 
+
+В нашем случае создадим StorageClass Fast так, чтобы
+монтировались SSD-диски для работы нашего хранилища.
+
+### StorageClass
+
+Создадим описание StorageClass’а
+
+storage-fast.yml
+```yml
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1beta1
+metadata:
+# Имя StorageClass'а
+  name: fast
+# Провайдер хранилища
+provisioner: kubernetes.io/gce-pd
+parameters:
+# Тип предоставляемого хранилища
+  type: pd-ssd
+```
+Добавим StorageClass в кластер
+$ kubectl apply -f storage-fast.yml
+
+### PVC + StorageClass
+
+Создадим описание PersistentVolumeClaim
+mongo-claim-dynamic.yml
+```yml
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mongo-pvc-dynamic
+spec:
+  accessModes:
+    - ReadWriteOnce
+# Вместо ссылки на
+# созданный диск, теперь мы
+# ссылаемся на StorageClass
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 10Gi
+
+```
+```bash
+kubectl apply -f mongo-claim-dynamic.yml
+```
+### Подключение динамического PVC
+
+Подключим PVC к нашим Pod'ам
+
+mongo-deployment.yml
+```yml
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+    post-db: "true"
+    comment-db: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+      name: mongo
+      labels:
+        app: reddit
+        component: mongo
+        post-db: "true"
+        comment-db: "true"
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts:
+        - name: mongo-gce-pd-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-gce-pd-storage
+        persistentVolumeClaim:
+# Обновим PersistentVolumeClaim
+          claimName: mongo-pvc-dynamic
+
+```
+Обновим описание нашего Deployment
+
+```
+kubectl apply -f mongo-deployment.yml
+```
+### Давайте посмотрит какие в итоге у нас получились PersistentVolume'ы
+
+```
+kubectl get persistentvolume 
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM                       STORAGECLASS   REASON   AGE
+pvc-744f479a-c9b6-446f-926d-933d6bb17988   15Gi       RWO            Delete           Bound       default/mongo-pvc           standard                16m
+pvc-798d23de-9a16-4287-a8da-3f4fe46feaed   10Gi       RWO            Delete           Bound       default/mongo-pvc-dynamic   fast                    3m15s
+reddit-mongo-disk                          25Gi       RWO            Retain           Available                                                       22m
+```
+STATUS - Статус PV по отношению к
+Pod'ам и Claim'ам
+
+CLAIM -  какому Claim'у привязан
+данный PV
+
+StorageClass данного PV
+
+[На созданные Kubernetes'ом диски можно посмотреть в web console](https://console.cloud.google.com/compute/disks)
 

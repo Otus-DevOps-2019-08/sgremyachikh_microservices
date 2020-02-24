@@ -1,0 +1,35 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  labels:
+    app: reddit
+spec:
+# Выбираем объекты:
+# - Выбираем объекты политики (pod’ы с mongodb)
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+# Блок запрещающих направлений:
+# - Запрещаем все входящие подключения
+# - Исходящие разрешены
+  policyTypes:
+  - Ingress
+# Блок разрешающих правил:
+# - Разрешаем все входящие подключения от
+# - POD-ов с label-ами comment.
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: comment
+# - Разрешаем все входящие подключения от
+# - POD-ов с label-ами post.
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: post

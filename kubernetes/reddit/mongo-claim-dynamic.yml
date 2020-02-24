@@ -1,0 +1,15 @@
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mongo-pvc-dynamic
+spec:
+  accessModes:
+    - ReadWriteOnce
+# Вместо ссылки на
+# созданный диск, теперь мы
+# ссылаемся на StorageClass
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 10Gi
