@@ -6774,3 +6774,5 @@ StorageClass данного PV
 
 [На созданные Kubernetes'ом диски можно посмотреть в web console](https://console.cloud.google.com/compute/disks)
 
+# HW 28 Интеграция Kubernetes в GitlabCI. CI/CD в Kubernetes.
+
