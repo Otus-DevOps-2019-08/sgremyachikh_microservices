@@ -1,0 +1,11 @@
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1beta1
+metadata:
+# Имя StorageClass'а
+  name: fast
+# Провайдер хранилища
+provisioner: kubernetes.io/gce-pd
+parameters:
+# Тип предоставляемого хранилища
+  type: pd-ssd
