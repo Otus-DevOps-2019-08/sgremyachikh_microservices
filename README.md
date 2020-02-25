@@ -6776,3 +6776,92 @@ StorageClass данного PV
 
 # HW 28 Интеграция Kubernetes в GitlabCI. CI/CD в Kubernetes.
 
+### План
+Работа с Helm3
+Развертывание Gitlab в Kubernetes
+Запуск CI/CD конвейера в Kubernetes
+
+## Helm
+
+Helm - пакетный менеджер для Kubernetes.
+С его помощью мы будем:
+1. Стандартизировать поставку приложения в Kubernetes
+2. Декларировать инфраструктуру
+3. Деплоить новые версии приложения
+
+### Helm - установка
+
+Helm - клиент-серверное приложение. Установим его
+клиентскую часть - консольный клиент Helm
+
+https://github.com/helm/helm/releases
+
+распакуйте и разместите исполняемый файл helm в директории
+исполнения (/usr/local/bin/ , /usr/bin, …)
+
+Helm читает конфигурацию kubectl (~/.kube/config) и сам
+определяет текущий контекст (кластер, пользователь, неймспейс)
+Если хотите сменить кластер, то либо меняйте контекст с
+помощью
+
+```bash
+$ kubectl config set-context
+```
+
+либо подгружайте helm’у собственный config-файл флагом --
+kube-context.
+
+Тиллер я ставить не буду, т.к. использую хельм 3,1,1
+
+### Charts
+
+Chart - это пакет в Helm.
+Charts в папке kubernetes со следующей
+структурой директорий:
+
+├── Charts
+├── comment
+├── post
+├── reddit
+└── ui
+
+***ВАЖНО!!! Helm предпочитает .yaml !!!***
+
+### Начнем разработку Chart’а для компонента ui приложения
+Создайте файл-описание chart’а.
+
+```bash
+touch ui/Chart.yaml
+```
+
+```yml
+name: ui
+version: 1.0.0
+description: OTUS reddit application UI
+maintainers:
+- name: Someone
+email: my@mail.com
+appVersion: 1.0
+
+```
+Реально значимыми являются поля name и version. От них
+зависит работа Helm’а с Chart’ом. Остальное - описания
+
+### Templates
+
+Основным содержимым Chart’ов являются шаблоны
+манифестов Kubernetes.
+
+1. Создаю директорию ui/templates
+2. Переношу в неё все манифесты, разработанные ранее для
+сервиса ui (ui-service, ui-deployment, ui-ingress)
+3. Переименую их (уберите префикс “ui-“) и поменяйте расширение
+на .yaml) - стилистические правки
+
+└── ui
+├── Chart.yaml
+├── templates
+│ ├── deployment.yaml
+│ ├── ingress.yaml
+│ └── service.yaml
+
