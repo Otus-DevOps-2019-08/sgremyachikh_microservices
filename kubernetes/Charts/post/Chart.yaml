@@ -1,8 +1,9 @@
 ---
-name: ui
+name: post
 version: 1.0.0
-description: OTUS reddit application UI
+description: OTUS reddit application POST
 maintainers:
 - name: Gremyachikh Svetozar
 email: sgremyachikh@gmail.com
 appVersion: 1.0
+...
