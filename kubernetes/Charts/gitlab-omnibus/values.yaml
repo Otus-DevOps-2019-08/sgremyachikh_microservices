@@ -73,9 +73,6 @@ healthCheckToken: 'SXBAQichEJasbtDSygrD'
 #  gitlab_rails['smtp_address'] = "smtp.example.org"
 
 gitlab-runner:
-  rbac:
-    create: true
-    clusterWideAccess: true
   checkInterval: 1
   # runnerRegistrationToken must equal initialSharedRunnersRegistrationToken
   runnerRegistrationToken: "tQtCbx5UZy_ByS7FyzUH"

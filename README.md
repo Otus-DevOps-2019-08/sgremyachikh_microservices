@@ -1244,9 +1244,9 @@ ansible-playbook ./playbooks/gitlabci.yml
 
 https://docs.gitlab.com/omnibus/settings/configuration.html
 
-In order for GitLab to display correct repository clone links to your users it needs to know the URL under which it is reached by your users, e.g. http://gitlab.example.com. Add or edit the following line in :
+In order for GitLab to display correct repository clone links to your users it needs to know the URL under which it is reached by your users, e.g. http://gitlab.systemctl.tech. Add or edit the following line in :
 
-> external_url "http://gitlab.example.com"
+> external_url "http://gitlab.systemctl.tech"
 
 потом
 ```
@@ -8198,3 +8198,415 @@ gitlab-gitlab-redis-6c675dd568-8r6r9        1/1     Running   0          33m
 gitlab-gitlab-runner-7fddf67f78-5mgrs       1/1     Running   4          33m
 
 ```
+
+Поместите запись в локальный файл `/etc/hosts` (поставьте свой IP-адрес)
+```shell
+echo "104.199.36.252 gitlab-gitlab staging production" | sudo tee /etc/hosts
+```
+
+http://104.199.36.252/ не работает
+
+
+```log
+ubectl get pods -n nginx-ingress
+NAME                                    READY   STATUS             RESTARTS   AGE
+default-http-backend-65b964d8cc-72phj   1/1     Running            0          57m
+nginx-cxgl7                             0/1     CrashLoopBackOff   16         57m
+nginx-jrtd8                             0/1     Error              16         57m
+
+kubectl logs nginx-cxgl7 -n nginx-ingress
+[dumb-init] Unable to detach from controlling tty (errno=25 Inappropriate ioctl for device).
+[dumb-init] Child spawned with PID 6.
+[dumb-init] Unable to attach to controlling tty (errno=25 Inappropriate ioctl for device).
+[dumb-init] setsid complete.
+I0301 17:12:58.919757       6 launch.go:105] &{NGINX 0.9.0-beta.11 git-a3131c5 https://github.com/kubernetes/ingress}
+I0301 17:12:58.919919       6 launch.go:108] Watching for ingress class: nginx
+I0301 17:12:58.920263       6 launch.go:262] Creating API server client for https://10.0.0.1:443
+I0301 17:12:58.922216       6 nginx.go:182] starting NGINX process...
+F0301 17:12:58.952163       6 launch.go:122] no service with name nginx-ingress/default-http-backend found: services "default-http-backend" is forbidden: User "system:serviceaccount:nginx-ingress:default" cannot get resource "services" in API group "" in the namespace "nginx-ingress"
+[dumb-init] Received signal 17.
+[dumb-init] A child with PID 6 exited with exit status 255.
+[dumb-init] Forwarded signal 15 to children.
+[dumb-init] Child exited with status 255. Goodbye.
+```
+Тут надо сказать, что это точка неразврата/невозврата - или надо будет брать, переделывать этот депрекейтед велосипед, допилитьвать роли, биндинги, деплоймент... или сдаться и просто сдать домашку. В курсаче мы сделали с rbac разок все, по сути этот опыт тут ни к чему может быть.
+
+### ок...а мы пойдем другим путем
+
+https://docs.gitlab.com/charts/
+https://docs.gitlab.com/charts/installation/deployment.html
+```bash
+helm3 fetch gitlab/gitlab --untar
+
+/sgremyachikh_microservices/kubernetes/Charts   kubernetes-4 ●  helm3 upgrade --install gitlab --set global.edition=ce --set certmanager-issuer.email=sgremyachikh@gmail.com --set global.hosts.domain=systemctl.tech --set gitlab-runner.runners.privileged=true ./gitlab
+Release "gitlab" does not exist. Installing it now.
+NAME: gitlab
+LAST DEPLOYED: Sun Mar  1 23:45:18 2020
+NAMESPACE: default
+STATUS: deployed
+REVISION: 1
+NOTES:
+WARNING: If you are upgrading from a previous version of the GitLab Helm Chart, there is a major upgrade to the included PostgreSQL chart, which requires manual steps be performed. Please see our upgrade documentation for more information: https://docs.gitlab.com/charts/installation/upgrade.html
+
+kubectl get ingress
+NAME              HOSTS                     ADDRESS          PORTS     AGE
+gitlab-minio      minio.systemctl.tech      104.199.36.252   80, 443   2m19s
+gitlab-registry   registry.systemctl.tech   104.199.36.252   80, 443   2m19s
+gitlab-unicorn    gitlab.systemctl.tech     104.199.36.252   80, 443   2m19s
+
+/sgremyachikh_microservices/kubernetes/Charts   kubernetes-4 ●  kubectl get pods
+NAME                                                    READY   STATUS      RESTARTS   AGE
+gitlab-cainjector-8586db65b6-hnnj4                      1/1     Running     0          3m2s
+gitlab-cert-manager-544cb76db9-5nr6m                    1/1     Running     0          3m4s
+gitlab-gitaly-0                                         1/1     Running     0          2m57s
+gitlab-gitlab-exporter-6c56b66f96-b4jwn                 1/1     Running     0          3m3s
+gitlab-gitlab-runner-7766d74f8-s4psq                    1/1     Running     0          3m
+gitlab-gitlab-shell-7fdd4589b9-b8885                    1/1     Running     0          3m2s
+gitlab-gitlab-shell-7fdd4589b9-gthdc                    1/1     Running     0          2m48s
+gitlab-issuer.1-qvxcd                                   0/1     Completed   0          3m
+gitlab-migrations.1-zb7vd                               0/1     Completed   0          3m
+gitlab-minio-8f879c754-4lls6                            1/1     Running     0          3m4s
+gitlab-minio-create-buckets.1-g5wvj                     0/1     Completed   0          3m
+gitlab-nginx-ingress-controller-68f544df7d-5nrhr        1/1     Running     0          3m4s
+gitlab-nginx-ingress-controller-68f544df7d-bcxqd        1/1     Running     0          3m4s
+gitlab-nginx-ingress-controller-68f544df7d-smpzv        1/1     Running     0          3m4s
+gitlab-nginx-ingress-default-backend-6cd54c5f86-g2pjl   1/1     Running     0          3m1s
+gitlab-nginx-ingress-default-backend-6cd54c5f86-lh5qv   1/1     Running     0          3m
+gitlab-postgresql-0                                     2/2     Running     0          2m59s
+gitlab-prometheus-server-86bbc4c747-sdtbq               2/2     Running     0          3m2s
+gitlab-redis-master-0                                   2/2     Running     0          3m1s
+gitlab-registry-56c4f6cc8f-m6cjz                        1/1     Running     0          3m4s
+gitlab-registry-56c4f6cc8f-mzlg6                        1/1     Running     0          3m4s
+gitlab-sidekiq-all-in-1-v1-5564bf89bd-78h7x             1/1     Running     0          3m4s
+gitlab-task-runner-798fd6646f-vlbws                     1/1     Running     0          3m3s
+gitlab-unicorn-55ddbdc775-67hp9                         2/2     Running     0          2m48s
+gitlab-unicorn-55ddbdc775-bmtq6                         2/2     Running     0          3m2s
+runner-sqxv272l-project-3-concurrent-0bv948             3/3     Running     0          34s
+
+```
+тем временет на reg ru кручу A записи
+
+systemctl.tech
+DNS-серверы и управление зоной
+
+A
+gitlab
+→
+104.199.36.252
+
+A
+minio
+→
+104.199.36.252
+
+A
+registry
+→
+104.199.36.252
+
+
+```bash
+#Initial login
+#You can access the GitLab instance by visiting the domain specified during installation. If you manually created the secret for #initial root password, you can use that to sign in as root user. If not, GitLab would’ve automatically created a random password for #root user. This can be extracted by the following command (replace <name> by name of the release - which is gitlab if you used the #command above).
+kubectl get secret gitlab-gitlab-initial-root-password -ojsonpath='{.data.password}' | base64 --decode ; echo
+# эхо вернет сгенерированный пароль
+```
+В результате имею:
+
+https://gitlab.systemctl.tech/
+
+соглашаюсь на исключения безопасности на самоподписанные серты
+
+логинюсь рутом с паролем
+добавляю свои ключи ssh
+
+### Запустим проект
+
+Создать группу с именем докерайди decapapreta
+
+https://gitlab.systemctl.tech//decapapreta
+
+В настройках группы выберите пункт CI/CD
+
+Добавьте 2 переменные:
+CI_REGISTRY_USER- логин в dockerhub 
+CI_REGISTRY_PASSWORD - пароль от Docker Hub
+
+Эти учетные данные будут использованы при сборке и
+релизе docker-образов с помощью Gitlab CI
+
+В группе создадим новый проект
+
+https://gitlab.systemctl.tech/decapapreta/reddit-deploy
+
+Создайте еще 3 проекта: post, ui, comment (сделайте также их
+публичными)
+
+Локально у себя создайте директорию Gitlab_ci со следующей
+структурой директорий.
+
+```
+/sgremyachikh_microservices/kubernetes/Gitlab_ci/ui   kubernetes-4 ●  tree
+.
+├── build_info.txt
+├── config.ru
+├── docker_build.sh
+├── Dockerfile
+├── Gemfile
+├── Gemfile.lock
+├── helpers.rb
+├── middleware.rb
+├── ui_app.rb
+├── VERSION
+└── views
+    ├── create.haml
+    ├── index.haml
+    ├── layout.haml
+    └── show.haml
+```
+### В директории Gitlab_ci/ui:
+1. Инициализируем локальный git-репозиторий
+2. Добавим удаленный репозиторий
+3. Закоммитим и отправим в gitlab
+```
+git init
+git remote add origin git@gitlab.systemctl.tech:decapapreta/ui.git
+git add .
+git commit -am "initial commit"
+git push origin master
+```
+Для post и comment продейлайте аналогичные действия. Не
+забудьте указывать соответствующие названия репозиториев и
+групп.
+
+Перенести содержимое директории Charts (папки ui, post,
+comment, reddit) в Gitlab_ci/reddit-deploy
+
+Запушить reddit-deploy в gitlab-проект reddit-deploy
+
+Структура:
+```
+/sgremyachikh_microservices/kubernetes/Gitlab_ci/reddit-deploy   master  tree
+.
+├── comment
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   └── service.yaml
+│   └── values.yaml
+├── post
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   └── service.yaml
+│   └── values.yaml
+├── reddit
+│   ├── charts
+│   │   ├── comment-1.0.0.tgz
+│   │   ├── mongodb-7.8.6.tgz
+│   │   ├── post-1.0.0.tgz
+│   │   └── ui-1.0.0.tgz
+│   ├── Chart.yaml
+│   ├── requirements.lock
+│   ├── requirements.yaml
+│   └── values.yaml
+└── ui
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── _helpers.tpl
+    │   ├── ingress.yaml
+    │   └── service.yaml
+    └── values.yaml
+
+```
+
+ Создайте файл gitlab_ci/ui/.gitlab-ci.yml с содержимым:
+```yaml
+---
+image: alpine:latest
+# В текущей конфигурации CI выполняет
+# 1. Build: Сборку докер-образа с тегом master
+# 2. Test: Фиктивное тестирование
+# 3. Release: Смену тега с master на тег из файла VERSION и пуш
+# docker-образа с новым тегом
+# Job для выполнения каждой задачи запускается в отдельном
+# Kubernetes POD-е.
+
+stages:
+  - build
+  - test
+  - release
+  - cleanup
+
+build:
+  stage: build
+  image: docker:git
+  services:
+    - docker:18.09.7-dind
+  script:
+# Требуемые операции вызываются в блоках script
+    - setup_docker
+    - build
+  variables:
+    DOCKER_DRIVER: overlay2
+  only:
+    - branches
+
+test:
+  stage: test
+  script:
+# Требуемые операции вызываются в блоках script
+    - exit 0
+  only:
+    - branches
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:dind
+  script:
+# Требуемые операции вызываются в блоках script
+    - setup_docker
+    - release
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  only:
+    - master
+
+# Описание самих операций производится в виде bash-функций в
+# блоке .auto_devops
+.auto_devops: &auto_devops |
+  [[ "$TRACE" ]] && set -x
+  export CI_REGISTRY="index.docker.io"
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY/$CI_PROJECT_PATH
+  export CI_APPLICATION_TAG=$CI_COMMIT_REF_SLUG
+  export CI_CONTAINER_NAME=ci_job_build_${CI_JOB_ID}
+  export TILLER_NAMESPACE="kube-system"
+
+  function setup_docker() {
+    if ! docker info &>/dev/null; then
+      if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+        export DOCKER_HOST='tcp://localhost:2375'
+      fi
+    fi
+  }
+
+  function release() {
+
+    echo "Updating docker images ..."
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    echo ""
+  }
+
+  function build() {
+
+    echo "Building Dockerfile-based application..."
+    echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    echo "Pushing to GitLab Container Registry..."
+    docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    echo ""
+  }
+
+before_script:
+  - *auto_devops
+
+```
+2. Закомитьте и запуште в gitlab
+3. Проверьте, что Pipeline работает
+
+В текущей конфигурации CI выполняет
+1. Build: Сборку докер-образа с тегом master
+2. Test: Фиктивное тестирование
+3. Release: Смену тега с master на тег из файла VERSION и пуш
+docker-образа с новым тегом
+Job для выполнения каждой задачи запускается в отдельном
+Kubernetes POD-е.
+
+Для Post и Comment также добавьте в репозиторий .gitlabci.yml и проследите, что сборки образов прошли успешно.
+
+Все успешно.
+
+### Настроим CI
+
+Дадим возможность разработчику запускать отдельное
+окружение в Kubernetes по коммиту в feature-бранч.
+Немного обновим конфиг ингресса для сервиса UI:
+
+```yml
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+# уникальное имя запущенного сервиса возвращает тоже самое что и {{ .Release.Name }}-{{ .Chart.Name }}, 
+# но в этом случае из _helpers.tpl
+  name: {{ template "ui.fullname" . }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.ingress.class }}
+spec:
+  rules:
+  - host: {{ .Values.ingress.host | default .Release.Name }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: {{ template "ui.fullname" . }}
+          servicePort: {{ .Values.service.externalPort }}
+...
+```
+Обновим конфиг ингресса для сервиса UI:
+```yml
+---
+service:
+    internalPort: 9292
+    externalPort: 9292
+
+image:
+    repository: decapapreta/ui
+    tag: "1.0"
+
+ingress:
+  class: nginx
+
+# Можете даже закоментировать эти параметры или оставить
+# пустыми. Главное, чтобы они были в конфигурации Chart’а в
+# качестве документации
+postHost:
+postPort:
+commentHost:
+commentPort:
+
+```
+#### Дадим возможность разработчику запускать отдельное окружение в Kubernetes по коммиту в feature-бранч.
+
+1. Создайте новый бранч в репозитории ui
+```
+git checkout -b feature/3
+```
+2. Обновите [ui/.gitlab-ci.yml]()
+3. Закоммитьте и запушьте изменения
+$ git checkout -b feature/3
+ссылка на gist
+$ git commit -am "Add review feature"
+$ git push origin feature/3

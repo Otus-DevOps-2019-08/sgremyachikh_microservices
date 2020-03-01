@@ -54,11 +54,11 @@ checkInterval: 30
 
 ## For RBAC support:
 rbac:
-  create: true
+  create: false
 
   ## Run the gitlab-bastion container with the ability to deploy/manage containers of jobs
   ## cluster-wide or only within namespace
-  clusterWideAccess: true
+  clusterWideAccess: false
 
   ## Use the following Kubernetes Service Account name if RBAC is disabled in this Helm chart (see rbac.create)
   ##
@@ -82,7 +82,7 @@ runners:
   ## commands. Please read the docs before turning this on:
   ## ref: https://docs.gitlab.com/runner/executors/kubernetes.html#using-docker-dind
   ##
-  privileged: true
+  privileged: false
 
   ## Namespace to run Kubernetes jobs in (defaults to the same namespace of this release)
   ##
