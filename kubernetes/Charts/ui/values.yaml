@@ -5,4 +5,15 @@ service:
 
 image:
     repository: decapapreta/ui
-    tag: 1.0
+    tag: "1.0"
+
+ingress:
+  class: nginx
+
+# Можете даже закоментировать эти параметры или оставить
+# пустыми. Главное, чтобы они были в конфигурации Chart’а в
+# качестве документации
+postHost:
+postPort:
+commentHost:
+commentPort:

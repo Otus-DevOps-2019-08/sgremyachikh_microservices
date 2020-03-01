@@ -7020,7 +7020,7 @@ kubectl get ingress
 NAME   HOSTS   ADDRESS   PORTS     AGE
 ui     *                 80, 443   58m
 ```
-не дождался аупишник первого резиза ингресса
+не дождался айпишник первого резиза ингресса
 
 По IP-адресам можно попасть на разные релизы ui-приложений.
 P.S. подождите пару минут, пока ingress’ы станут доступными... ну да
@@ -7135,8 +7135,9 @@ service:
 
 image:
   repository: decapapreta/ui
-  tag: 1.0
+  tag: "1.0"
 ```
+**Важно** - тэг докер образа лучше брать в кавычки вопреки методичке, иначе тег 1.0 обрабатывается как число! т.е. верная запись выглядит как "1.0".
 
 ### Существующий релиз ui обновлю, новые запилю
 
@@ -7296,7 +7297,7 @@ service:
 
 image:
   repository: decapapreta/post
-  tag: 1.0
+  tag: "1.0"
 
 databaseHost: 
 
@@ -7387,7 +7388,7 @@ service:
 
 image:
   repository: decapapreta/comment
-  tag: 1.0
+  tag: "1.0"
 
 databaseHost: 
 
@@ -7489,3 +7490,711 @@ template функция
 3. В каждом из шаблонов манифестов вставить следующую
 функцию там, где это требуется (большинство полей это name: )
 
+### tree
+
+```bash
+tree       
+.
+├── comment
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   └── service.yaml
+│   └── values.yaml
+├── post
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   └── service.yaml
+│   └── values.yaml
+├── reddit
+└── ui
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── _helpers.tpl
+    │   ├── ingress.yaml
+    │   └── service.yaml
+    └── values.yaml
+
+```
+
+### Управление зависимостями
+
+Мы создали Chart’ы для каждой компоненты нашего
+приложения. Каждый из них можно запустить по-отдельности
+командой
+
+```bash
+helm3 upgrade --install <RELEASE_NAME> <PATH_TO_CHART>/
+
+```
+Но они будут запускаться в разных релизах, и не будут видеть
+друг друга. - так написано в метотодичке
+
+С помощью механизма управления зависимостями создадим
+единый Chart reddit, который объединит наши компоненты
+
+###  reddit с зависимостями
+
+Создайте reddit/Chart.yaml
+
+```yml
+---
+dependencies:
+  - name: ui
+    version: "1.0.0"
+    repository: "file://../ui"
+
+  - name: post
+    version: "1.0.0"
+    repository: "file://../post"
+
+  - name: comment
+    version: "1.0.0"
+    repository: "file://../comment"
+...
+```
+Имена и версии должны совпадать с содержанием исходных Chart.yml
+
+Пути указывается относительно расположения самого
+requirements.yaml
+
+Нужно загрузить зависимости (когда Chart’ не упакован в tgz
+архив)
+
+```bash
+helm3 dep update
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "jetstack" chart repository
+...Successfully got an update from the "elastic" chart repository
+...Successfully got an update from the "stable" chart repository
+...Successfully got an update from the "gitlab" chart repository
+Update Complete. ⎈Happy Helming!⎈
+Saving 3 charts
+Deleting outdated charts
+```
+Появится файл requirements.lock с фиксацией зависимостей
+Будет создана директория charts с зависимостями в виде архивов
+Структура станет следующей:
+
+```bash
+/Charts/reddit   kubernetes-4 ●✚  tree
+.
+├── charts
+│   ├── comment-1.0.0.tgz
+│   ├── post-1.0.0.tgz
+│   └── ui-1.0.0.tgz
+├── Chart.yaml
+├── requirements.lock
+├── requirements.yaml
+└── values.yaml
+
+1 directory, 7 files
+```
+
+Chart для базы данных не будем создавать вручную. Возьмем
+готовый.
+
+Найдем Chart в общедоступном репозитории
+
+```bash
+/Charts/reddit   kubernetes-4 ●✚  helm3 repo add stable https://kubernetes-charts.storage.googleapis.com
+"stable" has been added to your repositories
+### добавляю этот репо в helm3
+
+/Charts/reddit   kubernetes-4 ●✚  helm3 search repo mongo
+NAME                                    CHART VERSION   APP VERSION     DESCRIPTION                                       
+stable/mongodb                          7.8.6           4.2.3           NoSQL document-oriented database that stores JS...
+stable/mongodb-replicaset               3.11.6          3.6             NoSQL document-oriented database that stores JS...
+stable/prometheus-mongodb-exporter      2.4.0           v0.10.0         A Prometheus exporter for MongoDB metrics         
+stable/unifi                            0.6.1           5.11.50         Ubiquiti Network's Unifi Controller
+```
+добавим в reddit/requirements.yml:
+
+```yml
+---
+dependencies:
+  - name: ui
+    version: "1.0.0"
+    repository: "file://../ui"
+
+  - name: post
+    version: "1.0.0"
+    repository: "file://../post"
+
+  - name: comment
+    version: "1.0.0"
+    repository: "file://../comment"
+
+  - name: mongodb
+    version: "7.8.6"
+    repository: "https://kubernetes-charts.storage.googleapis.com"
+...
+
+```
+обновим зависимости
+
+```bash
+/Charts/reddit   kubernetes-4 ●✚  helm3 dep update
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "jetstack" chart repository
+...Successfully got an update from the "elastic" chart repository
+...Successfully got an update from the "stable" chart repository
+...Successfully got an update from the "gitlab" chart repository
+Update Complete. ⎈Happy Helming!⎈
+Saving 4 charts
+Downloading mongodb from repo https://kubernetes-charts.storage.googleapis.com
+Deleting outdated charts
+
+/Charts/reddit   kubernetes-4 ●✚  tree
+.
+├── charts
+│   ├── comment-1.0.0.tgz
+│   ├── mongodb-7.8.6.tgz
+│   ├── post-1.0.0.tgz
+│   └── ui-1.0.0.tgz
+├── Chart.yaml
+├── requirements.lock
+├── requirements.yaml
+└── values.yaml
+
+1 directory, 8 files
+```
+### Установим тестовый релиз:
+
+
+```bash
+/Charts   kubernetes-4 ●✚  helm3 delete test-ui-3                             
+release "test-ui-3" uninstalled
+
+/Charts   kubernetes-4 ●✚  helm3 upgrade --install reddit-test ./reddit
+Release "reddit-test" does not exist. Installing it now.
+NAME: reddit-test
+LAST DEPLOYED: Sun Mar  1 15:19:07 2020
+NAMESPACE: default
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+
+/Charts   kubernetes-4 ●✚  kubectl get ingress
+NAME             HOSTS   ADDRESS          PORTS   AGE
+reddit-test-ui   *       35.244.216.175   80      2m19s
+
+kubectl get pods   
+NAME                                   READY   STATUS    RESTARTS   AGE
+reddit-test-comment-7dc6fd4b56-j24g6   1/1     Running   0          2m25s
+reddit-test-mongodb-75cb86d878-jd8f7   1/1     Running   0          2m25s
+reddit-test-post-7bf595979c-jkgvq      1/1     Running   0          2m25s
+reddit-test-ui-944b8d49-7w7cd          1/1     Running   0          2m25s
+reddit-test-ui-944b8d49-b7bd8          1/1     Running   0          2m25s
+reddit-test-ui-944b8d49-gkl2c          1/1     Running   0          2m25s
+
+```
+Иду в гуи, вижу "Can't show blog posts, some problems with the post service"
+
+> kubectl logs reddit-test-post-7bf595979c-jkgvq - ни шума. ни пыли
+> kubectl describe pod reddit-test-post-7bf595979c-jkgvq - тоже все красиво, не понятно что-то... а надо было прочесть дальше просто)
+
+Есть проблема с тем, что UI-сервис не знает как правильно
+ходить в post и comment сервисы. Ведь их имена теперь
+динамические и зависят от имен чартов
+
+В Dockerfile UI-сервиса уже заданы переменные окружения.
+Надо, чтобы они указывали на нужные бекенды
+
+```Dockerfile
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+```
+Добавим в ui/deployments.yaml:
+
+```yml
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+# уникальное имя запущенного сервиса возвращает тоже самое что и {{ .Release.Name }}-{{ .Chart.Name }}, 
+# но в этом случае из _helpers.tpl
+  name: {{ template "ui.fullname" . }}
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  replicas: 3
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: reddit
+      component: ui
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      name: ui
+      labels:
+        app: reddit
+        component: ui
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        name: ui
+        ports:
+        - containerPort: {{ .Values.service.internalPort }}
+          name: ui
+          protocol: TCP
+        env:
+        - name: POST_SERVICE_HOST
+          value: {{  .Values.postHost | default (printf "%s-post" .Release.Name) }}
+        - name: POST_SERVICE_PORT
+          value: {{  .Values.postPort | default "5000" | quote }}
+        - name: COMMENT_SERVICE_HOST
+          value: {{  .Values.commentHost | default (printf "%s-comment" .Release.Name) }}
+        - name: COMMENT_SERVICE_PORT
+          value: {{  .Values.commentPort | default "9292" | quote }}
+        - name: ENV
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+...
+```
+***{{ .Values.commentPort | default "9292" | quote }} ❗ обратите внимание на функцию добавления кавычек. Для чисел и булевых значений это важно***
+
+Добавим в ui/values.yaml
+
+```yaml
+---
+service:
+    internalPort: 9292
+    externalPort: 9292
+
+image:
+    repository: decapapreta/ui
+    tag: "1.0"
+
+ingress:
+  class: nginx
+
+# Можете даже закоментировать эти параметры или оставить
+# пустыми. Главное, чтобы они были в конфигурации Chart’а в
+# качестве документации
+postHost:
+postPort:
+commentHost:
+commentPort:
+```
+### values reddit
+
+Вы можете задавать теперь переменные для зависимостей
+прямо в values.yaml самого Chart’а reddit. Они перезаписывают
+значения переменных из зависимых чартов
+
+reddit/values.yaml
+Ссылаемся на переменные чартов из зависимостей
+
+```yaml
+---
+comment:
+  image:
+    repository: decapapreta/comment
+    tag: "1.0"
+  service:
+    externalPort: 9292
+
+post:
+  image:
+    repository: decapapreta/post
+    tag: "1.0"
+  service:
+    externalPort: 5000
+
+ui:
+  image:
+    repository: decapapreta/ui
+    tag: "1.0"
+  service:
+    externalPort: 9292
+
+# иначе post и comment у нас в базе авторизироваться не могут
+mongodb:
+  usePassword: false
+
+
+```
+
+После обновления UI - нужно обновить зависимости чарта
+reddit.
+
+```bash
+/Charts   kubernetes-4 ●✚  helm3 dep update ./reddit 
+
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "jetstack" chart repository
+...Successfully got an update from the "elastic" chart repository
+...Successfully got an update from the "stable" chart repository
+...Successfully got an update from the "gitlab" chart repository
+Update Complete. ⎈Happy Helming!⎈
+Saving 4 charts
+Downloading mongodb from repo https://kubernetes-charts.storage.googleapis.com
+Deleting outdated charts
+```
+Обновите релиз, установленный в k8s
+
+```bash
+/Charts   kubernetes-4 ●✚  helm3 upgrade --install reddit-test ./reddit
+
+Release "reddit-test" has been upgraded. Happy Helming!
+NAME: reddit-test
+LAST DEPLOYED: Sun Mar  1 16:28:05 2020
+NAMESPACE: default
+STATUS: deployed
+REVISION: 2
+TEST SUITE: None
+
+kubectl get ingress                           
+NAME             HOSTS   ADDRESS          PORTS   AGE
+reddit-test-ui   *       35.244.216.175   80      69m
+
+
+```
+### Как обезопасить себя? (helm2 tiller plugin) - пропустил т.к. все делаю в 3 хельме уже
+
+## GitLab + Kubernetes
+
+### Установим GitLab
+
+Подготовим GKE-кластер. Нам нужны машинки помощнее.
+но только не руками. Terraform.
+
+в модуле создания пула нод сделаю изменения:
+
+```terraform
+  node_pools = [
+    {
+      name               = "cluster-node-pool"
+      machine_type       = "n1-standard-2"
+      disk_size_gb       = 20
+      autoscaling        = true
+      auto_repair        = true
+      auto_upgrade       = true
+      min_count          = 2
+      max_count          = 3
+      initial_node_count = 2
+    },
+```
+и приименю
+
+### Отключите RBAC для упрощения работы - Нет, это будет не правильно.
+
+Gitlab будем ставить также с помощью Helm Chart’а из пакета
+Omnibus.
+1. Добавим репозиторий Gitlab
+
+```bash
+helm3 repo add gitlab https://charts.gitlab.io
+"gitlab" has been added to your repositories
+```
+2. Мы будем менять конфигурацию Gitlab, поэтому скачаем Chart
+
+```bash
+helm3 fetch gitlab/gitlab-omnibus --untar
+```
+в /sgremyachikh_microservices/kubernetes/Charts/gitlab-omnibus/charts/gitlab-runner/values.yaml
+
+```yaml
+rbac:
+  create: true
+...
+  clusterWideAccess: true
+...
+runners:
+  privileged: true
+...
+
+```
+### Установим GitLab
+
+Раскомментируем по гайду Отуса
+```
+baseDomain: example.com
+legoEmail: you@example.com
+```
+Добавьте в gitlab-omnibus/templates/gitlab/gitlabsvc.yaml по гайду отуса:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "fullname" . }}
+  labels:
+    app: {{ template "fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+spec:
+  selector:
+    name: {{ template "fullname" . }}
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: ssh
+    - name: mattermost
+      port: 8065
+      targetPort: mattermost
+    - name: registry
+      port: 8105
+      targetPort: registry
+    - name: workhorse
+      port: 8005
+      targetPort: workhorse
+    - name: prometheus
+      port: 9090
+      targetPort: prometheus
+    - name: web
+      port: 80
+      targetPort: workhorse
+    {{- if and .Values.pagesExternalScheme .Values.pagesExternalDomain}}
+    - name: pages
+      port: 8090
+      targetPort: pages
+    {{- end }}
+
+```
+Поправить в gitlab-omnibus/templates/gitlab-config.yaml
+
+```yaml
+data:
+  external_scheme: http
+  external_hostname: gitlab.{{ .Values.baseDomain }}
+```
+Поправить в gitlab-omnibus/templates/ingress/gitlab-ingress.yaml
+
+```yaml
+  rules:
+  - host: {{ template "fullname" . }}
+    http:
+      paths:
+      - path: /
+```
+Установим сам гитлаб:
+
+```bash
+helm3 upgrade --install gitlab ./gitlab-omnibus -f ./gitlab-omnibus/values.yaml
+
+Release "gitlab" does not exist. Installing it now.
+WARNING: This chart is deprecated
+Error: unable to build kubernetes objects from release manifest: error validating "": error validating data: [unknown object type "nil" in ConfigMap.data.pages_external_domain, unknown object type "nil" in ConfigMap.data.pages_external_scheme]
+
+```
+в `gitlab-omnibus/values.yaml`
+```yaml
+...
+pagesExternalScheme: http
+pagesExternalDomain: your-pages-domain.com
+...
+```
+деплою еще раз
+
+```bash
+/Charts   kubernetes-4 ●✚  helm3 upgrade --install gitlab ./gitlab-omnibus -f ./gitlab-omnibus/values.yaml
+Release "gitlab" does not exist. Installing it now.
+WARNING: This chart is deprecated
+NAME: gitlab
+LAST DEPLOYED: Sun Mar  1 18:54:45 2020
+NAMESPACE: default
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+It may take several minutes for GitLab to reconfigure.
+    You can watch the status by running `kubectl get deployment -w gitlab-gitlab --namespace default
+  You did not specify a baseIP so one will be assigned for you.
+  It may take a few minutes for the LoadBalancer IP to be available.
+  Watch the status with: 'kubectl get svc -w --namespace nginx-ingress nginx', then:
+
+  export SERVICE_IP=$(kubectl get svc --namespace nginx-ingress nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+  Then make sure to configure DNS with something like:
+    *.your-domain.com	300 IN A $SERVICE_IP
+```
+```bash
+/Charts   kubernetes-4 ●✚  kubectl get pods                                   
+NAME                                        READY   STATUS             RESTARTS   AGE
+gitlab-gitlab-766445f7d7-4l72x              0/1     Running            0          4m12s
+gitlab-gitlab-postgresql-66d5b899b8-rzjn9   0/1     Pending            0          4m12s
+gitlab-gitlab-redis-6c675dd568-hj8tp        1/1     Running            0          4m12s
+gitlab-gitlab-runner-7fddf67f78-ds4xt       0/1     CrashLoopBackOff   4          4m12s
+```
+```log
+/Charts   kubernetes-4 ●✚  kubectl describe pod gitlab-gitlab-postgresql-66d5b899b8-rzjn9
+Name:           gitlab-gitlab-postgresql-66d5b899b8-rzjn9
+Namespace:      default
+Priority:       0
+Node:           <none>
+Labels:         app=gitlab-gitlab
+                name=gitlab-gitlab-postgresql
+                pod-template-hash=66d5b899b8
+Annotations:    kubernetes.io/limit-ranger: LimitRanger plugin set: cpu request for container postgresql
+Status:         Pending
+IP:             
+IPs:            <none>
+Controlled By:  ReplicaSet/gitlab-gitlab-postgresql-66d5b899b8
+Containers:
+  postgresql:
+    Image:      postgres:9.6.5
+    Port:       5432/TCP
+    Host Port:  0/TCP
+    Requests:
+      cpu:      100m
+    Liveness:   exec [pg_isready -h localhost -U postgres] delay=30s timeout=5s period=10s #success=1 #failure=3
+    Readiness:  exec [pg_isready -h localhost -U postgres] delay=5s timeout=1s period=10s #success=1 #failure=3
+    Environment:
+      POSTGRES_USER:      <set to the key 'postgres_user' of config map 'gitlab-gitlab-config'>   Optional: false
+      POSTGRES_PASSWORD:  <set to the key 'postgres_password' in secret 'gitlab-gitlab-secrets'>  Optional: false
+      POSTGRES_DB:        <set to the key 'postgres_db' of config map 'gitlab-gitlab-config'>     Optional: false
+      DB_EXTENSION:       pg_trgm
+      PGDATA:             /var/lib/postgresql/data/pgdata
+    Mounts:
+      /docker-entrypoint-initdb.d from initdb (ro)
+      /var/lib/postgresql/data from data (rw,path="postgres")
+      /var/run/secrets/kubernetes.io/serviceaccount from default-token-lnwvg (ro)
+Conditions:
+  Type           Status
+  PodScheduled   False 
+Volumes:
+  data:
+    Type:       PersistentVolumeClaim (a reference to a PersistentVolumeClaim in the same namespace)
+    ClaimName:  gitlab-gitlab-postgresql-storage
+    ReadOnly:   false
+  initdb:
+    Type:      ConfigMap (a volume populated by a ConfigMap)
+    Name:      gitlab-gitlab-postgresql-initdb
+    Optional:  false
+  default-token-lnwvg:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  default-token-lnwvg
+    Optional:    false
+QoS Class:       Burstable
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute for 300s
+                 node.kubernetes.io/unreachable:NoExecute for 300s
+Events:
+  Type     Reason             Age                   From                Message
+  ----     ------             ----                  ----                -------
+  Warning  FailedScheduling   57s (x8 over 5m40s)   default-scheduler   pod has unbound immediate PersistentVolumeClaims (repeated 2 times)
+  Normal   NotTriggerScaleUp  26s (x31 over 5m36s)  cluster-autoscaler  pod didn't trigger scale-up (it wouldn't fit if a new node is added):
+```
+
+```log
+/Charts   kubernetes-4 ●✚  kubectl get persistentvolumeclaims
+NAME                               STATUS    VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS         AGE
+gitlab-gitlab-config-storage       Bound     pvc-7e27ea91-c238-44b7-8357-376d16d95471   1Gi        RWO            gitlab-gitlab-fast   9m13s
+gitlab-gitlab-postgresql-storage   Pending                                                                        gitlab-gitlab-fast   9m13s
+gitlab-gitlab-redis-storage        Bound     pvc-1c532899-8503-4117-80b0-9fce6583fbfa   5Gi        RWO            gitlab-gitlab-fast   9m13s
+gitlab-gitlab-registry-storage     Bound     pvc-bc605ac0-6984-4632-bd26-5761dba77296   30Gi       RWO            gitlab-gitlab-fast   9m13s
+gitlab-gitlab-storage              Bound     pvc-6c3b8ff1-1938-4796-bd8f-aeb4399a2171   30Gi       RWO            gitlab-gitlab-fast   9m13s
+
+/Charts   kubernetes-4 ●✚  kubectl describe persistentvolumeclaims gitlab-gitlab-postgresql-storage
+
+Name:          gitlab-gitlab-postgresql-storage
+Namespace:     default
+StorageClass:  gitlab-gitlab-fast
+Status:        Pending
+Volume:        
+Labels:        app=gitlab-gitlab
+               chart=gitlab-omnibus-0.1.37
+               heritage=Helm
+               release=gitlab
+Annotations:   volume.beta.kubernetes.io/storage-class: gitlab-gitlab-fast
+               volume.beta.kubernetes.io/storage-provisioner: kubernetes.io/gce-pd
+Finalizers:    [kubernetes.io/pvc-protection]
+Capacity:      
+Access Modes:  
+VolumeMode:    Filesystem
+Mounted By:    gitlab-gitlab-postgresql-66d5b899b8-rzjn9
+Events:
+  Type     Reason              Age                 From                         Message
+  ----     ------              ----                ----                         -------
+  Warning  ProvisioningFailed  18s (x12 over 10m)  persistentvolume-controller  Failed to provision volume with StorageClass "gitlab-gitlab-fast": googleapi: Error 403: QUOTA_EXCEEDED - Quota 'SSD_TOTAL_GB' exceeded.  Limit: 100.0 in region europe-west1.
+```
+Эта домашка прекрасная своими приключениями.
+
+```log
+Failed to provision volume with StorageClass "gitlab-gitlab-fast": googleapi: Error 403: QUOTA_EXCEEDED - Quota 'SSD_TOTAL_GB' exceeded.  Limit: 100.0 in region europe-west1.
+```
+доступные классы
+```log
+/Charts   kubernetes-4 ●✚  kubectl get storageclasses
+NAME                 PROVISIONER            AGE
+gitlab-gitlab-fast   kubernetes.io/gce-pd   14m
+standard (default)   kubernetes.io/gce-pd   6h21m
+
+```
+### уменьшить запрашиваемое место чтобы уместиться в 100Гб!
+
+gitlab-omnibus/values.yaml
+```yaml
+...
+redisDedicatedStorage: true
+redisStorageSize: 5Gi
+redisAccessMode: ReadWriteOnce
+postgresImage: postgres:9.6.5
+# If you disable postgresDedicatedStorage, you should consider bumping up gitlabRailsStorageSize
+postgresDedicatedStorage: true
+postgresAccessMode: ReadWriteOnce
+postgresStorageSize: 10Gi
+gitlabDataAccessMode: ReadWriteOnce
+gitlabDataStorageSize: 10Gi
+gitlabRegistryAccessMode: ReadWriteOnce
+gitlabRegistryStorageSize: 10Gi
+gitlabConfigAccessMode: ReadWriteOnce
+gitlabConfigStorageSize: 1Gi
+...
+```
+деплоиться по верх не получится наверняка, - выделенные квоты уже заявлены, надо удалять релиз и вкатывать заново
+```bash
+Charts   kubernetes-4 ●✚  helm3 delete gitlab                                                     
+release "gitlab" uninstalled
+
+/Charts   kubernetes-4 ●✚  kubectl get storageclasses
+NAME                 PROVISIONER            AGE
+standard (default)   kubernetes.io/gce-pd   6h27m
+
+kubectl get persistentvolumeclaims                                      
+No resources found in default namespace.
+
+/Charts   kubernetes-4 ●✚  helm3 upgrade --install gitlab ./gitlab-omnibus -f ./gitlab-omnibus/values.yaml
+Release "gitlab" does not exist. Installing it now.
+WARNING: This chart is deprecated
+NAME: gitlab
+LAST DEPLOYED: Sun Mar  1 19:16:07 2020
+NAMESPACE: default
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+It may take several minutes for GitLab to reconfigure.
+    You can watch the status by running `kubectl get deployment -w gitlab-gitlab --namespace default
+  You did not specify a baseIP so one will be assigned for you.
+  It may take a few minutes for the LoadBalancer IP to be available.
+  Watch the status with: 'kubectl get svc -w --namespace nginx-ingress nginx', then:
+
+  export SERVICE_IP=$(kubectl get svc --namespace nginx-ingress nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+  Then make sure to configure DNS with something like:
+    *.your-domain.com	300 IN A $SERVICE_IP
+
+/Charts   kubernetes-4 ●✚  kubectl get pods    
+NAME                                        READY   STATUS    RESTARTS   AGE
+gitlab-gitlab-766445f7d7-r29tr              1/1     Running   0          33m
+gitlab-gitlab-postgresql-66d5b899b8-5cmcc   1/1     Running   0          33m
+gitlab-gitlab-redis-6c675dd568-8r6r9        1/1     Running   0          33m
+gitlab-gitlab-runner-7fddf67f78-5mgrs       1/1     Running   4          33m
+
+```

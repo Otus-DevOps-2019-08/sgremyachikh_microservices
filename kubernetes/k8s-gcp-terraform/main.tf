@@ -42,8 +42,8 @@ module "gke" {
   node_pools = [
     {
       name               = "cluster-node-pool"
-      machine_type       = "n1-standard-1"
-      disk_size_gb       = 10
+      machine_type       = "n1-standard-2"
+      disk_size_gb       = 20
       autoscaling        = true
       auto_repair        = true
       auto_upgrade       = true

@@ -2,10 +2,13 @@
 apiVersion: v1
 kind: Service
 metadata:
+# уникальное имя запущенного сервиса возвращает тоже самое что и {{ .Release.Name }}-{{ .Chart.Name }}, 
+# но в этом случае из _helpers.tpl
   name: {{ template "post.fullname" . }}
   labels:
     app: reddit
     component: post
+# сервис из конкретного релиза
     release: {{ .Release.Name }}
 spec:
   type: ClusterIP
@@ -14,6 +17,7 @@ spec:
     protocol: TCP
     targetPort: {{ .Values.service.internalPort }}
   selector:
+# селектр подов из конкретного релиза
     app: reddit
     component: post
     release: {{ .Release.Name }}

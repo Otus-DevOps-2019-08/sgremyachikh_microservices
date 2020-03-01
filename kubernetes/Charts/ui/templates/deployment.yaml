@@ -2,7 +2,9 @@
 apiVersion: apps/v1beta1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-{{ .Chart.Name }}
+# уникальное имя запущенного сервиса возвращает тоже самое что и {{ .Release.Name }}-{{ .Chart.Name }}, 
+# но в этом случае из _helpers.tpl
+  name: {{ template "ui.fullname" . }}
   labels:
     app: reddit
     component: ui
@@ -32,6 +34,14 @@ spec:
           name: ui
           protocol: TCP
         env:
+        - name: POST_SERVICE_HOST
+          value: {{  .Values.postHost | default (printf "%s-post" .Release.Name) }}
+        - name: POST_SERVICE_PORT
+          value: {{  .Values.postPort | default "5000" | quote }}
+        - name: COMMENT_SERVICE_HOST
+          value: {{  .Values.commentHost | default (printf "%s-comment" .Release.Name) }}
+        - name: COMMENT_SERVICE_PORT
+          value: {{  .Values.commentPort | default "9292" | quote }}
         - name: ENV
           valueFrom:
             fieldRef:
