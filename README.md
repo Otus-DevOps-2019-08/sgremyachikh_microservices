@@ -8604,9 +8604,1531 @@ commentPort:
 ```
 git checkout -b feature/3
 ```
-2. Обновите [ui/.gitlab-ci.yml]()
+2. Обновите [ui/.gitlab-ci.yml](https://github.com/Otus-DevOps-2019-08/sgremyachikh_microservices/blob/kubernetes-4/kubernetes/Gitlab_ci/ui/.gitlab-ci.yml)
 3. Закоммитьте и запушьте изменения
-$ git checkout -b feature/3
-ссылка на gist
-$ git commit -am "Add review feature"
-$ git push origin feature/3
+
+Отметим, что мы добавили стадию review, запускающую
+приложение в k8s по коммиту в feature-бранчи (не master).
+
+```yml
+review:
+  stage: review
+  script:
+    - install_dependencies
+    - ensure_namespace
+    - install_tiller
+    - deploy
+  variables:
+    KUBE_NAMESPACE: review
+    host: $CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  only:
+    refs:
+      - branches
+#    kubernetes: active
+  except:
+    - master
+```
+ВАЖНО! - #    kubernetes: active
+чтоб стейджи работали как в методичке. В курсаче делал так же.
+
+Мы добавили функцию deploy, которая загружает Chart из
+репозитория reddit-deploy и делает релиз в неймспейсе review с
+образом приложения, собранным на стадии build.
+
+```bash
+  function deploy() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+
+    if [[ "$track" != "stable" ]]; then
+      name="$name-$track"
+    fi
+
+    echo "Clone deploy repository..."
+    git clone http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/reddit-deploy.git
+
+    echo "Download helm dependencies..."
+    helm dep update reddit-deploy/reddit
+
+    echo "Deploy helm release $name to $KUBE_NAMESPACE"
+    helm upgrade --install \
+      --wait \
+      --set ui.ingress.host="$host" \
+      --set $CI_PROJECT_NAME.image.tag=$CI_APPLICATION_TAG \
+      --namespace="$KUBE_NAMESPACE" \
+      --version="$CI_PIPELINE_ID-$CI_JOB_ID" \
+      "$name" \
+      reddit-deploy/reddit/
+  }
+```
+Созданные для таких целей окружения временны, их требуется
+“убивать” , когда они больше не нужны
+добавим стейдж чистки:
+
+```yml
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+#    kubernetes: active
+  except:
+    - master
+```
+разумеется, добавляем его и в стейджи в начале файла
+
+```yaml
+---
+image: alpine:latest
+
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+
+build:
+  stage: build
+  image: docker:git
+  services:
+    - docker:18.09.7-dind
+  script:
+    - setup_docker
+    - build
+  variables:
+    DOCKER_DRIVER: overlay2
+  only:
+    - branches
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - branches
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:18.09.7-dind
+  script:
+    - setup_docker
+    - release
+  only:
+    - master
+
+review:
+  stage: review
+  script:
+    - install_dependencies
+    - ensure_namespace
+    - install_tiller
+    - deploy
+  variables:
+    KUBE_NAMESPACE: review
+    host: $CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  only:
+    refs:
+      - branches
+#    kubernetes: active
+  except:
+    - master
+# test
+
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+#    kubernetes: active
+  except:
+    - master
+
+.auto_devops: &auto_devops |
+  [[ "$TRACE" ]] && set -x
+  export CI_REGISTRY="index.docker.io"
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY/$CI_PROJECT_PATH
+  export CI_APPLICATION_TAG=$CI_COMMIT_REF_SLUG
+  export CI_CONTAINER_NAME=ci_job_build_${CI_JOB_ID}
+  export TILLER_NAMESPACE="kube-system"
+
+  function deploy() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+
+    if [[ "$track" != "stable" ]]; then
+      name="$name-$track"
+    fi
+
+    echo "Clone deploy repository..."
+    git clone http://gitlab.systemctl.tech/$CI_PROJECT_NAMESPACE/reddit-deploy.git
+
+    echo "Download helm dependencies..."
+    helm dep update reddit-deploy/reddit
+
+# Это костыль из-за 3 хельма, CI рассчитан на 2
+    kubectl describe namespace $KUBE_NAMESPACE || kubectl create namespace $KUBE_NAMESPACE
+
+    echo "Deploy helm release $name to $KUBE_NAMESPACE"
+    helm upgrade --install \
+      --wait \
+      --set ui.ingress.host="$host" \
+      --set $CI_PROJECT_NAME.image.tag=$CI_APPLICATION_TAG \
+      --namespace="$KUBE_NAMESPACE" \
+      --version="$CI_PIPELINE_ID-$CI_JOB_ID" \
+      "$name" \
+      reddit-deploy/reddit/
+  }
+
+  function install_dependencies() {
+
+    apk add -U openssl curl tar gzip bash ca-certificates git
+    wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    apk add glibc-2.23-r3.apk
+    rm glibc-2.23-r3.apk
+
+    curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar -xz -C $HOME
+    export PATH=${PATH}:$HOME/gsutil
+
+    curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+
+    mv linux-amd64/helm /usr/bin/
+    helm version --client
+
+    curl  -o /usr/bin/sync-repo.sh https://raw.githubusercontent.com/kubernetes/helm/master/scripts/sync-repo.sh
+    chmod a+x /usr/bin/sync-repo.sh
+
+    curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    chmod +x /usr/bin/kubectl
+    kubectl version --client
+  }
+
+  function setup_docker() {
+    if ! docker info &>/dev/null; then
+      if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+        export DOCKER_HOST='tcp://localhost:2375'
+      fi
+    fi
+  }
+
+  function ensure_namespace() {
+    kubectl describe namespace "$KUBE_NAMESPACE" || kubectl create namespace "$KUBE_NAMESPACE"
+  }
+
+  function release() {
+
+    echo "Updating docker images ..."
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    echo ""
+  }
+
+  function build() {
+
+    echo "Building Dockerfile-based application..."
+    echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    echo "Pushing to GitLab Container Registry..."
+    docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    echo ""
+  }
+
+  function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" --purge || true
+  }
+
+  function install_tiller() {
+    echo "Checking Tiller..."
+    helm init --upgrade
+    kubectl rollout status -n "$TILLER_NAMESPACE" -w "deployment/tiller-deploy"
+    if ! helm version --debug; then
+      echo "Failed to init Tiller."
+      return 1
+    fi
+    echo ""
+  }
+
+before_script:
+  - *auto_devops
+```
+но фокус не удается из-за rbac:
+```log
+ $ ensure_namespace
+ Error from server (Forbidden): namespaces "review" is forbidden: User "system:serviceaccount:default:default" cannot get resource "namespaces" in API group "" in the namespace "review"
+ Error from server (Forbidden): namespaces is forbidden: User "system:serviceaccount:default:default" cannot create resource "namespaces" in API group "" at the cluster scope
+```
+
+попробую как в курсаче: красиво. раннер в кластере с ***кластерной ролью***. 
+```bash
+cd /sgremyachikh_microservices/kubernetes/gitlab-runner/
+make apply
+```
+раннер тегировал "cabac", соответственно тегирую стейджи, наверное далее подключу кластер, чтоб так не делать
+```yml
+---
+image: alpine:latest
+
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+
+build:
+  stage: build
+  image: docker:git
+  services:
+    - docker:18.09.7-dind
+  script:
+    - setup_docker
+    - build
+  variables:
+    DOCKER_DRIVER: overlay2
+  only:
+    - branches
+  tags:
+    - cabac
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - branches
+  tags:
+    - cabac
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:18.09.7-dind
+  script:
+    - setup_docker
+    - release
+  only:
+    - master
+  tags:
+    - cabac
+
+review:
+  stage: review
+  script:
+    - install_dependencies
+    - ensure_namespace
+    - install_tiller
+    - deploy
+  variables:
+    KUBE_NAMESPACE: review
+    host: $CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  only:
+    refs:
+      - branches
+#    kubernetes: active
+  except:
+    - master
+  tags:
+    - cabac
+
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+#    kubernetes: active
+  except:
+    - master
+  tags:
+    - cabac
+
+.auto_devops: &auto_devops |
+  [[ "$TRACE" ]] && set -x
+  export CI_REGISTRY="index.docker.io"
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY/$CI_PROJECT_PATH
+  export CI_APPLICATION_TAG=$CI_COMMIT_REF_SLUG
+  export CI_CONTAINER_NAME=ci_job_build_${CI_JOB_ID}
+  export TILLER_NAMESPACE="kube-system"
+
+  function deploy() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+
+    if [[ "$track" != "stable" ]]; then
+      name="$name-$track"
+    fi
+
+    echo "Clone deploy repository..."
+    git clone ${CI_SERVER_PROTOCOL}://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.systemctl.tech:${CI_SERVER_PORT}/decapapreta/reddit-deploy.git
+
+    echo "Download helm dependencies..."
+    helm dep update reddit-deploy/reddit
+
+    echo "Deploy helm release $name to $KUBE_NAMESPACE"
+    helm upgrade --install \
+      --wait \
+      --set ui.ingress.host="$host" \
+      --set $CI_PROJECT_NAME.image.tag=$CI_APPLICATION_TAG \
+      --namespace="$KUBE_NAMESPACE" \
+      --version="$CI_PIPELINE_ID-$CI_JOB_ID" \
+      "$name" \
+      reddit-deploy/reddit/
+  }
+
+  function install_dependencies() {
+
+    apk add -U openssl curl tar gzip bash ca-certificates git
+    wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    apk add glibc-2.23-r3.apk
+    rm glibc-2.23-r3.apk
+
+    curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar -xz -C $HOME
+    export PATH=${PATH}:$HOME/gsutil
+
+    curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+
+    mv linux-amd64/helm /usr/bin/
+    helm version --client
+
+    curl  -o /usr/bin/sync-repo.sh https://raw.githubusercontent.com/kubernetes/helm/master/scripts/sync-repo.sh
+    chmod a+x /usr/bin/sync-repo.sh
+
+    curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    chmod +x /usr/bin/kubectl
+    kubectl version --client
+  }
+
+  function setup_docker() {
+    if ! docker info &>/dev/null; then
+      if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+        export DOCKER_HOST='tcp://localhost:2375'
+      fi
+    fi
+  }
+
+  function ensure_namespace() {
+    kubectl describe namespace "$KUBE_NAMESPACE" || kubectl create namespace "$KUBE_NAMESPACE"
+  }
+
+  function release() {
+
+    echo "Updating docker images ..."
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    echo ""
+  }
+
+  function build() {
+
+    echo "Building Dockerfile-based application..."
+    echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    echo "Pushing to GitLab Container Registry..."
+    docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    echo ""
+  }
+
+  function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" --purge || true
+  }
+
+  function install_tiller() {
+    echo "Checking Tiller..."
+    helm init --upgrade
+    kubectl rollout status -n "$TILLER_NAMESPACE" -w "deployment/tiller-deploy"
+    if ! helm version --debug; then
+      echo "Failed to init Tiller."
+      return 1
+    fi
+    echo ""
+  }
+
+before_script:
+  - *auto_devops
+
+```
+
+В Environments https://gitlab.systemctl.tech/decapapreta/ui/-/environments/1
+
+запуск и удаление работают
+
+Скопировать полученный файл .gitlab-ci.yml для ui в
+репозитории для post и comment.
+Проверить, что динамическое создание и удаление окружений
+работает с ними как ожидалось
+
+работают
+
+### Деплоим
+
+Теперь создадим staging и production среды для работы
+приложения
+Создайте файл reddit-deploy/.gitlab-ci.yml
+```yml
+image: alpine:latest
+
+stages:
+  - test
+  - staging
+  - production
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - triggers
+    - branches
+  tags:
+    - cabac
+
+staging:
+  stage: staging
+  script:
+  - install_dependencies
+  - ensure_namespace
+  - install_tiller
+  - deploy
+  variables:
+    KUBE_NAMESPACE: staging
+  environment:
+    name: staging
+    url: http://staging
+  only:
+    refs:
+      - master
+#    kubernetes: active
+  tags:
+    - cabac
+
+production:
+  stage: production
+  script:
+    - install_dependencies
+    - ensure_namespace
+    - install_tiller
+    - deploy
+  variables:
+    KUBE_NAMESPACE: production
+  environment:
+    name: production
+    url: http://production
+  when: manual
+  only:
+    refs:
+      - master
+  tags:
+    - cabac
+#    kubernetes: active
+
+.auto_devops: &auto_devops |
+  # Auto DevOps variables and functions
+  [[ "$TRACE" ]] && set -x
+  export CI_REGISTRY="index.docker.io"
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY/$CI_PROJECT_PATH
+  export CI_APPLICATION_TAG=$CI_COMMIT_REF_SLUG
+  export CI_CONTAINER_NAME=ci_job_build_${CI_JOB_ID}
+  export TILLER_NAMESPACE="kube-system"
+
+  function deploy() {
+    echo $KUBE_NAMESPACE
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm dep build reddit
+
+    # for microservice in $(helm dep ls | grep "file://" | awk '{print $1}') ; do
+    #   SET_VERSION="$SET_VERSION \ --set $microservice.image.tag='$(curl http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/ui/raw/master/VERSION)' "
+
+    helm upgrade --install \
+      --wait \
+      --set ui.ingress.host="$host" \
+      --set ui.image.tag="$(curl http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/ui/raw/master/VERSION)" \
+      --set post.image.tag="$(curl http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/post/raw/master/VERSION)" \
+      --set comment.image.tag="$(curl http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/comment/raw/master/VERSION)" \
+      --namespace="$KUBE_NAMESPACE" \
+      --version="$CI_PIPELINE_ID-$CI_JOB_ID" \
+      "$name" \
+      reddit
+  }
+
+  function install_dependencies() {
+
+    apk add -U openssl curl tar gzip bash ca-certificates git
+    wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    apk add glibc-2.23-r3.apk
+    rm glibc-2.23-r3.apk
+
+    curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+
+    mv linux-amd64/helm /usr/bin/
+    helm version --client
+
+    curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    chmod +x /usr/bin/kubectl
+    kubectl version --client
+  }
+
+  function ensure_namespace() {
+    kubectl describe namespace "$KUBE_NAMESPACE" || kubectl create namespace "$KUBE_NAMESPACE"
+  }
+
+  function install_tiller() {
+    echo "Checking Tiller..."
+    helm init --upgrade
+    kubectl rollout status -n "$TILLER_NAMESPACE" -w "deployment/tiller-deploy"
+    if ! helm version --debug; then
+      echo "Failed to init Tiller."
+      return 1
+    fi
+    echo ""
+  }
+
+  function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" || true
+  }
+
+before_script:
+  - *auto_devops
+```
+Запуште в репозиторий reddit-deploy ветку master
+Этот файл отличается от предыдущих тем, что:
+1. Не собирает docker-образы
+2. Деплоит на статичные окружения (staging и production)
+3. Не удаляет окружения
+
+Удостоверьтесь, что staging успешно завершен
+Ошибка в job `staging`
+```log
+$ deploy
+staging
+Error: requirements.lock is out of sync with requirements.yaml
+```
+обновил зависимости чарта 2-м хельмом, запушил в мастер
+
+Деплой на staging успешно. Сайт доступен из https://gitlab.systemctl.tech/decapapreta/reddit-deploy/environments
+Production: здесь мы запускаем ручной пайплайн деплоя на прод. И ждем, пока пайплайн завершится
+В https://gitlab.systemctl.tech/decapapreta/reddit-deploy/environments видно  оба окружения
+
+### Пайплайн здорового человека
+
+Сейчас почти вся логика пайплайна заключена в auto_devops и
+трудночитаема. Давайте переделаем имеющийся для ui пайплайн
+так, чтобы он соответствовал синтаксису Gitlab
+
+```yaml
+---
+image: alpine:latest
+
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+
+build:
+  stage: build
+  only:
+    - branches
+  image: docker:git
+  services:
+    - docker:18.09.7-dind
+  variables:
+    DOCKER_DRIVER: overlay2
+    CI_REGISTRY: 'index.docker.io'
+    CI_APPLICATION_REPOSITORY: $CI_REGISTRY/$CI_PROJECT_PATH
+    CI_APPLICATION_TAG: $CI_COMMIT_REF_SLUG
+    CI_CONTAINER_NAME: ci_job_build_${CI_JOB_ID}
+  before_script:
+    - >
+      if ! docker info &>/dev/null; then
+        if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+          export DOCKER_HOST='tcp://localhost:2375'
+        fi
+      fi
+  script:
+    # Building
+    - echo "Building Dockerfile-based application..."
+    - echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    - echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    - docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+    - >
+      if [[ -n "$CI_REGISTRY_USER" ]]; then
+        echo "Logging to GitLab Container Registry with CI credentials...for build"
+        docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      fi
+    - echo "Pushing to GitLab Container Registry..."
+    - docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - branches
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:18.09.7-dind
+  variables:
+    CI_REGISTRY: 'index.docker.io'
+    CI_APPLICATION_REPOSITORY: $CI_REGISTRY/$CI_PROJECT_PATH
+    CI_APPLICATION_TAG: $CI_COMMIT_REF_SLUG
+    CI_CONTAINER_NAME: ci_job_build_${CI_JOB_ID}
+  before_script:
+    - >
+      if ! docker info &>/dev/null; then
+        if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+          export DOCKER_HOST='tcp://localhost:2375'
+        fi
+      fi
+  script:
+    # Releasing
+    - echo "Updating docker images ..."
+    - >
+      if [[ -n "$CI_REGISTRY_USER" ]]; then
+        echo "Logging to GitLab Container Registry with CI credentials for release..."
+        docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      fi
+    - docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    - docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    - docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    # latest is neede for feature flags
+    - docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:latest"
+    - docker push "$CI_APPLICATION_REPOSITORY:latest"
+  only:
+    - master
+
+review:
+  stage: review
+  variables:
+    KUBE_NAMESPACE: review
+    host: $CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    TILLER_NAMESPACE: kube-system
+    CI_APPLICATION_TAG: $CI_COMMIT_REF_SLUG
+    name: $CI_ENVIRONMENT_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+  before_script:
+    # installing dependencies
+    - apk add -U openssl curl tar gzip bash ca-certificates git
+    - wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    - wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    - apk add glibc-2.23-r3.apk
+    - curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar -xz -C $HOME
+    - export PATH=${PATH}:$HOME/gsutil
+    - curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+    - mv linux-amd64/helm /usr/bin/
+    - helm version --client
+    - curl  -o /usr/bin/sync-repo.sh https://raw.githubusercontent.com/kubernetes/helm/master/scripts/sync-repo.sh
+    - chmod a+x /usr/bin/sync-repo.sh
+    - curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    - chmod +x /usr/bin/kubectl
+    - kubectl version --client
+    # ensuring namespace
+    - kubectl describe namespace "$KUBE_NAMESPACE" || kubectl create namespace "$KUBE_NAMESPACE"
+    # installing Tiller
+    - echo "Checking Tiller..."
+    - helm init --upgrade
+    - kubectl rollout status -n "$TILLER_NAMESPACE" -w "deployment/tiller-deploy"
+    - >
+      if ! helm version --debug; then
+        echo "Failed to init Tiller."
+        exit 1
+      fi
+  script:
+    - export track="${1-stable}"
+    - >
+      if [[ "$track" != "stable" ]]; then
+        name="$name-$track"
+      fi
+    - echo "Clone deploy repository..."
+    - git clone http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/reddit-deploy.git
+    - echo "Download helm dependencies..."
+    - helm dep update reddit-deploy/reddit
+    - echo "Deploy helm release $name to $KUBE_NAMESPACE"
+    - echo "Upgrading existing release..."
+    - echo "helm upgrade --install --wait --set ui.ingress.host="$host" --set $CI_PROJECT_NAME.image.tag="$CI_APPLICATION_TAG" --namespace="$KUBE_NAMESPACE" --version="$CI_PIPELINE_ID-$CI_JOB_ID" "$name" reddit-deploy/reddit/"
+    - >
+      helm upgrade \
+        --install \
+        --wait \
+        --set ui.ingress.host="$host" \
+        --set $CI_PROJECT_NAME.image.tag="$CI_APPLICATION_TAG" \
+        --namespace="$KUBE_NAMESPACE" \
+        --version="$CI_PIPELINE_ID-$CI_JOB_ID" \
+        "$name" \
+        reddit-deploy/reddit/
+
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+    name: $CI_ENVIRONMENT_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+  before_script:
+    # installing dependencies
+    - apk add -U openssl curl tar gzip bash ca-certificates git
+    - wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    - wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    - apk add glibc-2.23-r3.apk
+    - curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar -xz -C $HOME
+    - export PATH=${PATH}:$HOME/gsutil
+    - curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+    - mv linux-amd64/helm /usr/bin/
+    - helm version --client
+    - curl  -o /usr/bin/sync-repo.sh https://raw.githubusercontent.com/kubernetes/helm/master/scripts/sync-repo.sh
+    - chmod a+x /usr/bin/sync-repo.sh
+    - curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    - chmod +x /usr/bin/kubectl
+    - kubectl version --client
+  script:
+    - helm delete "$name" --purge
+...
+```
+Тонкости синтаксиса:
+
+- Объявление переменных можно перенести в variables
+- conditional statements можно записать так:
+  ```shell
+  if [[ "$track" != "stable" ]]; then
+  name="$name-$track"
+  fi
+  ```
+- А рзносить строку на несолько так:
+  ```shell
+  helm upgrade --install \
+  --wait \
+  --set ui.ingress.host="$host"
+  ```
+
+Как видите, читаемость кода значительно возросла.
+
+1. Изменить пайплайн сервиса _COMMENT_, использующих для деплоя `helm2` таким образом, чтобы деплой осуществлялся с использованием `tiller plugin`. Таким образом, деплой каждого пайплайна из трех сервисов должен производиться по-разному.
+2. Изменить пайплайн сервиса _POST_, чтобы он использовал `helm3` для деплоя.
+
+Полученные файлы пайплайнов для сервисов (4 штуки: `ui`, `post`, `comment`, `reddit`) положить в директорию `Charts/gitlabci` под именами `gitlab-ci-.yml` и закоммитить.
+
+### UI
+
+```yml
+---
+image: alpine:latest
+
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+
+build:
+  stage: build
+  only:
+    - branches
+  image: docker:git
+  services:
+    - docker:18.09.7-dind
+  variables:
+    DOCKER_DRIVER: overlay2
+    CI_REGISTRY: 'index.docker.io'
+    CI_APPLICATION_REPOSITORY: $CI_REGISTRY/$CI_PROJECT_PATH
+    CI_APPLICATION_TAG: $CI_COMMIT_REF_SLUG
+    CI_CONTAINER_NAME: ci_job_build_${CI_JOB_ID}
+  before_script:
+    - >
+      if ! docker info &>/dev/null; then
+        if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+          export DOCKER_HOST='tcp://localhost:2375'
+        fi
+      fi
+  script:
+    # Building
+    - echo "Building Dockerfile-based application..."
+    - echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    - echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    - docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+    - >
+      if [[ -n "$CI_REGISTRY_USER" ]]; then
+        echo "Logging to GitLab Container Registry with CI credentials...for build"
+        docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      fi
+    - echo "Pushing to GitLab Container Registry..."
+    - docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - branches
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:18.09.7-dind
+  variables:
+    CI_REGISTRY: 'index.docker.io'
+    CI_APPLICATION_REPOSITORY: $CI_REGISTRY/$CI_PROJECT_PATH
+    CI_APPLICATION_TAG: $CI_COMMIT_REF_SLUG
+    CI_CONTAINER_NAME: ci_job_build_${CI_JOB_ID}
+  before_script:
+    - >
+      if ! docker info &>/dev/null; then
+        if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+          export DOCKER_HOST='tcp://localhost:2375'
+        fi
+      fi
+  script:
+    # Releasing
+    - echo "Updating docker images ..."
+    - >
+      if [[ -n "$CI_REGISTRY_USER" ]]; then
+        echo "Logging to GitLab Container Registry with CI credentials for release..."
+        docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      fi
+    - docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    - docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    - docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    # latest is neede for feature flags
+    - docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:latest"
+    - docker push "$CI_APPLICATION_REPOSITORY:latest"
+  only:
+    - master
+
+review:
+  stage: review
+  variables:
+    KUBE_NAMESPACE: review
+    host: $CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    TILLER_NAMESPACE: kube-system
+    CI_APPLICATION_TAG: $CI_COMMIT_REF_SLUG
+    name: $CI_ENVIRONMENT_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+  before_script:
+    # installing dependencies
+    - apk add -U openssl curl tar gzip bash ca-certificates git
+    - wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    - wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    - apk add glibc-2.23-r3.apk
+    - curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar -xz -C $HOME
+    - export PATH=${PATH}:$HOME/gsutil
+    - curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+    - mv linux-amd64/helm /usr/bin/
+    - helm version --client
+    - curl  -o /usr/bin/sync-repo.sh https://raw.githubusercontent.com/kubernetes/helm/master/scripts/sync-repo.sh
+    - chmod a+x /usr/bin/sync-repo.sh
+    - curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    - chmod +x /usr/bin/kubectl
+    - kubectl version --client
+    # ensuring namespace
+    - kubectl describe namespace "$KUBE_NAMESPACE" || kubectl create namespace "$KUBE_NAMESPACE"
+    # installing Tiller
+    - echo "Checking Tiller..."
+    - helm init --upgrade
+    - kubectl rollout status -n "$TILLER_NAMESPACE" -w "deployment/tiller-deploy"
+    - >
+      if ! helm version --debug; then
+        echo "Failed to init Tiller."
+        exit 1
+      fi
+  script:
+    - export track="${1-stable}"
+    - >
+      if [[ "$track" != "stable" ]]; then
+        name="$name-$track"
+      fi
+    - echo "Clone deploy repository..."
+    - git clone http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/reddit-deploy.git
+    - echo "Download helm dependencies..."
+    - helm dep update reddit-deploy/reddit
+    - echo "Deploy helm release $name to $KUBE_NAMESPACE"
+    - echo "Upgrading existing release..."
+    - echo "helm upgrade --install --wait --set ui.ingress.host="$host" --set $CI_PROJECT_NAME.image.tag="$CI_APPLICATION_TAG" --namespace="$KUBE_NAMESPACE" --version="$CI_PIPELINE_ID-$CI_JOB_ID" "$name" reddit-deploy/reddit/"
+    - >
+      helm upgrade \
+        --install \
+        --wait \
+        --set ui.ingress.host="$host" \
+        --set $CI_PROJECT_NAME.image.tag="$CI_APPLICATION_TAG" \
+        --namespace="$KUBE_NAMESPACE" \
+        --version="$CI_PIPELINE_ID-$CI_JOB_ID" \
+        "$name" \
+        reddit-deploy/reddit/
+
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+    name: $CI_ENVIRONMENT_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+  before_script:
+    # installing dependencies
+    - apk add -U openssl curl tar gzip bash ca-certificates git
+    - wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    - wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    - apk add glibc-2.23-r3.apk
+    - curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar -xz -C $HOME
+    - export PATH=${PATH}:$HOME/gsutil
+    - curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+    - mv linux-amd64/helm /usr/bin/
+    - helm version --client
+    - curl  -o /usr/bin/sync-repo.sh https://raw.githubusercontent.com/kubernetes/helm/master/scripts/sync-repo.sh
+    - chmod a+x /usr/bin/sync-repo.sh
+    - curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    - chmod +x /usr/bin/kubectl
+    - kubectl version --client
+  script:
+    - helm delete "$name" --purge
+...
+```
+### Comment
+
+```yml
+---
+image: alpine:latest
+
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+
+build:
+  stage: build
+  image: docker:git
+  services:
+    - docker:18.09.7-dind
+  script:
+    - setup_docker
+    - build
+  variables:
+    DOCKER_DRIVER: overlay2
+  only:
+    - branches
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - branches
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:18.09.7-dind
+  script:
+    - setup_docker
+    - release
+  only:
+    - master
+
+review:
+  stage: review
+  script:
+    - install_dependencies
+    - ensure_namespace
+    - install_tiller
+    - deploy
+  variables:
+    KUBE_NAMESPACE: review
+    host: $CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+                                                                                                                      
+.auto_devops: &auto_devops |
+  [[ "$TRACE" ]] && set -x
+  export CI_REGISTRY="index.docker.io"
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY/$CI_PROJECT_PATH
+  export CI_APPLICATION_TAG=$CI_COMMIT_REF_SLUG
+  export CI_CONTAINER_NAME=ci_job_build_${CI_JOB_ID}
+  export TILLER_NAMESPACE="kube-system"
+
+  function deploy() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+
+    if [[ "$track" != "stable" ]]; then
+      name="$name-$track"
+    fi
+
+    echo "Clone deploy repository..."
+    git clone http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/reddit-deploy.git
+
+    echo "Download helm dependencies..."
+    helm dep update reddit-deploy/reddit
+
+    echo "Deploy helm release $name to $KUBE_NAMESPACE"
+    helm tiller run \
+    helm upgrade --install \
+      --wait \
+      --set ui.ingress.host="$host" \
+      --set $CI_PROJECT_NAME.image.tag=$CI_APPLICATION_TAG \
+      --namespace="$KUBE_NAMESPACE" \
+      --version="$CI_PIPELINE_ID-$CI_JOB_ID" \
+      "$name" \
+      reddit-deploy/reddit/
+  }
+
+  function install_dependencies() {
+
+    apk add -U openssl curl tar gzip bash ca-certificates git
+    wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    apk add glibc-2.23-r3.apk
+    rm glibc-2.23-r3.apk
+
+    curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar -xz -C $HOME
+    export PATH=${PATH}:$HOME/gsutil
+
+    curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+
+    mv linux-amd64/helm /usr/bin/
+    helm version --client
+
+    echo "Helm init & plugin tiller install"
+    helm init --client-only
+    helm plugin install https://github.com/rimusz/helm-tiller
+
+    curl  -o /usr/bin/sync-repo.sh https://raw.githubusercontent.com/kubernetes/helm/master/scripts/sync-repo.sh
+    chmod a+x /usr/bin/sync-repo.sh
+
+    curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    chmod +x /usr/bin/kubectl
+    kubectl version --client
+  }
+
+  function setup_docker() {
+    if ! docker info &>/dev/null; then
+      if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+        export DOCKER_HOST='tcp://localhost:2375'
+      fi
+    fi
+  }
+
+  function ensure_namespace() {
+    kubectl describe namespace "$KUBE_NAMESPACE" || kubectl create namespace "$KUBE_NAMESPACE"
+  }
+
+  function release() {
+
+    echo "Updating docker images ..."
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    echo ""
+  }
+
+  function build() {
+
+    echo "Building Dockerfile-based application..."
+    echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    echo "Pushing to GitLab Container Registry..."
+    docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    echo ""
+  }
+
+  function install_tiller() {
+    echo "Checking Tiller..."
+    #helm init --upgrade
+    helm init --client-only
+    kubectl rollout status -n "$TILLER_NAMESPACE" -w "deployment/tiller-deploy"
+    if ! helm version --debug; then
+      echo "Failed to init Tiller."
+      return 1
+    fi
+    echo ""
+  }
+
+  function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" --purge || true
+  }
+
+before_script:
+  - *auto_devops
+...
+ 
+```
+### POST
+
+```yml
+---
+image: alpine:latest
+
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+
+build:
+  stage: build
+  image: docker:git
+  services:
+    - docker:18.09.7-dind
+  script:
+    - setup_docker
+    - build
+  variables:
+    DOCKER_DRIVER: overlay2
+  only:
+    - branches
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - branches
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:18.09.7-dind
+  script:
+    - setup_docker
+    - release
+  only:
+    - master
+
+review:
+  stage: review
+  script:
+    - install_dependencies
+    - ensure_namespace
+    - install_tiller
+    - deploy
+  variables:
+    KUBE_NAMESPACE: review
+    host: $CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+    on_stop: stop_review
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+      - branches
+    kubernetes: active
+  except:
+    - master
+                                                                                                                      
+.auto_devops: &auto_devops |
+  [[ "$TRACE" ]] && set -x
+  export CI_REGISTRY="index.docker.io"
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY/$CI_PROJECT_PATH
+  export CI_APPLICATION_TAG=$CI_COMMIT_REF_SLUG
+  export CI_CONTAINER_NAME=ci_job_build_${CI_JOB_ID}
+  export TILLER_NAMESPACE="kube-system"
+
+  function deploy() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+
+    if [[ "$track" != "stable" ]]; then
+      name="$name-$track"
+    fi
+
+    echo "Clone deploy repository..."
+    git clone http://gitlab-gitlab/$CI_PROJECT_NAMESPACE/reddit-deploy.git
+
+    echo "Download helm dependencies..."
+    helm dep update reddit-deploy/reddit
+
+    echo "Deploy helm release $name to $KUBE_NAMESPACE"
+    helm upgrade --install \
+      --wait \
+      --set ui.ingress.host="$host" \
+      --set $CI_PROJECT_NAME.image.tag=$CI_APPLICATION_TAG \
+      --namespace="$KUBE_NAMESPACE" \
+      --version="$CI_PIPELINE_ID-$CI_JOB_ID" \
+      "$name" \
+      reddit-deploy/reddit/
+  }
+
+  function install_dependencies() {
+
+    apk add -U openssl curl tar gzip bash ca-certificates git
+    wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.23-r3/glibc-2.23-r3.apk
+    apk add glibc-2.23-r3.apk
+    rm glibc-2.23-r3.apk
+
+    curl https://storage.googleapis.com/pub/gsutil.tar.gz | tar -xz -C $HOME
+    export PATH=${PATH}:$HOME/gsutil
+
+    #curl https://kubernetes-helm.storage.googleapis.com/helm-v2.13.1-linux-amd64.tar.gz | tar zx
+    curl https://get.helm.sh/helm-v3.0.2-linux-amd64.tar.gz | tar zx
+
+    mv linux-amd64/helm /usr/bin/
+    helm version --client
+
+    curl  -o /usr/bin/sync-repo.sh https://raw.githubusercontent.com/kubernetes/helm/master/scripts/sync-repo.sh
+    chmod a+x /usr/bin/sync-repo.sh
+
+    curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+    chmod +x /usr/bin/kubectl
+    kubectl version --client
+  }
+
+  function setup_docker() {
+    if ! docker info &>/dev/null; then
+      if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+        export DOCKER_HOST='tcp://localhost:2375'
+      fi
+    fi
+  }
+
+  function ensure_namespace() {
+    kubectl describe namespace "$KUBE_NAMESPACE" || kubectl create namespace "$KUBE_NAMESPACE"
+  }
+
+  function release() {
+
+    echo "Updating docker images ..."
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    echo ""
+  }
+
+  function build() {
+
+    echo "Building Dockerfile-based application..."
+    echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    echo "Pushing to GitLab Container Registry..."
+    docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    echo ""
+  }
+
+  function install_tiller() {
+    echo "Checking Tiller..."
+    #helm init --upgrade
+    #kubectl rollout status -n "$TILLER_NAMESPACE" -w "deployment/tiller-deploy"
+    #if ! helm version --debug; then
+    #  echo "Failed to init Tiller."
+    #  return 1
+    #fi
+    echo ""
+  }
+
+  function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" --purge || true
+  }
+
+before_script:
+  - *auto_devops
+...
+
+```
