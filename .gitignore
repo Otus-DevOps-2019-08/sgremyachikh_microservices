@@ -14,4 +14,3 @@
 .env
 monitoring/mongodb_exporter
 kubernetes/Charts/gitlab
-kubernetes/Charts/gitlab-omnibus
