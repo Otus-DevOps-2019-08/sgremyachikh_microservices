@@ -3,6 +3,7 @@ GEM
   specs:
     bson (4.2.2)
     bson_ext (1.5.1)
+    concurrent-ruby (1.1.10)
     et-orbi (1.0.8)
       tzinfo
     mongo (2.4.3)
@@ -22,10 +23,9 @@ GEM
       rack (~> 2.0)
       rack-protection (= 2.0.2)
       tilt (~> 2.0)
-    thread_safe (0.3.6)
     tilt (2.0.8)
-    tzinfo (1.2.3)
-      thread_safe (~> 0.1)
+    tzinfo (2.0.5)
+      concurrent-ruby (~> 1.0)
 
 PLATFORMS
   ruby
